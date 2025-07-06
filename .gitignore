@@ -1,0 +1,64 @@
+# ----- Go build ----- #
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build directories
+/bin/
+/build/
+/_out/
+
+# Dependency directories (remove the comment if you vendor dependencies)
+vendor/
+
+# ----- Test artifacts ----- #
+# Test binaries (unit & integration)
+*_test
+*_test.exe
+integration_test
+integration_test.exe
+
+# Coverage profiles & reports
+coverage.out
+coverage.html
+
+# Test logs
+*.log
+
+# ----- IDEs and editors ----- #
+# GoLand
+.idea/
+
+# VS Code
+.vscode/
+
+# Vim swap files
+*.swp
+
+# Emacs temporary files
+*~
+
+# ----- OS files ----- #
+.DS_Store
+Thumbs.db
+
+# ----- Environment configs ----- #
+# dotenv environment variables
+.env
+.env.local
+.env.*.local
+
+# ----- Misc ----- #
+# Mac thumbnail cache
+.AppleDouble
+.LSOverride
+
+# npm (if you have a UI component)
+node_modules/
+
+# Python (if you use scripts)
+__pycache__/
+*.py[cod]
