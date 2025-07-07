@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Primary
+  postgres-primary:
+    image: postgres:15-alpine
+    container_name: kisanlink-postgres-primary
+    environment:
+      POSTGRES_DB: kisanlink_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kisanlink_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kisanlink-test
+
+  # PostgreSQL Read Replica
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: kisanlink-postgres-replica
+    environment:
+      POSTGRES_DB: kisanlink_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kisanlink_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kisanlink-test
+
+  # DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: kisanlink-dynamodb-local
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/shell"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kisanlink-test
+
+  # SpiceDB
+  spicedb:
+    image: authzed/spicedb:latest
+    container_name: kisanlink-spicedb
+    ports:
+      - "50051:50051"
+    command: ["serve", "--grpc-preshared-key", "test-token", "--datastore-engine", "memory"]
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kisanlink-test
+
+  # Test Runner (optional - for running tests in container)
+  test-runner:
+    image: golang:1.21-alpine
+    container_name: kisanlink-test-runner
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      - RUN_INTEGRATION_TESTS=true
+      - TEST_ENVIRONMENT=local
+      - DB_LOG_LEVEL=debug
+      - DB_PRIMARY_BACKEND=gorm
+      - DB_POSTGRES_HOST=postgres-primary
+      - DB_POSTGRES_PORT=5432
+      - DB_POSTGRES_USER=postgres
+      - DB_POSTGRES_PASSWORD=password
+      - DB_POSTGRES_DBNAME=kisanlink_test
+      - DB_POSTGRES_SSLMODE=disable
+      - DB_POSTGRES_MAX_CONNS=5
+      - DB_POSTGRES_IDLE_CONNS=2
+      - DB_POSTGRES_READ_REPLICAS=postgres-replica:5432
+      - DB_DYNAMO_REGION=us-east-1
+      - DB_DYNAMO_TABLE=kisanlink_test
+      - DB_SPICEDB_ENDPOINT=spicedb:50051
+      - DB_SPICEDB_TOKEN=test-token
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      postgres-replica:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+      spicedb:
+        condition: service_healthy
+    networks:
+      - kisanlink-test
+    profiles:
+      - test-runner
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
+  dynamodb_data:
+
+networks:
+  kisanlink-test:
+    driver: bridge 

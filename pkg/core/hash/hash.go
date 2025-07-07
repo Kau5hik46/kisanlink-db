@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -158,7 +159,7 @@ func (g *IDGenerator) generateTimestampID(size TableSize) string {
 // then converts the beginning of the hash to numeric digits.
 // The resulting numeric string is padded or truncated to match the specified size.
 func (g *IDGenerator) generateHashID(tableIdentifier string, size TableSize) string {
-	data := fmt.Sprintf("%s:%d", tableIdentifier, time.Now().UnixNano())
+	data := fmt.Sprintf("%s:%d:%d", tableIdentifier, time.Now().UnixNano(), rand.Int63())
 	hash := sha256.Sum256([]byte(data))
 	hashHex := hex.EncodeToString(hash[:])
 
