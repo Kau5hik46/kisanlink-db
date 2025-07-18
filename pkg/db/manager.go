@@ -21,6 +21,7 @@ const (
 	BackendSpiceDB  BackendType = "spicedb"
 	BackendNeo4j    BackendType = "neo4j"
 	BackendVector   BackendType = "vector"
+	BackendS3       BackendType = "s3"
 )
 
 // DBManager defines the interface that all database managers must implement
@@ -83,6 +84,7 @@ type DatabaseManager struct {
 	postgresManager *PostgresManager
 	dynamoManager   *DynamoManager
 	spiceManager    *SpiceManager
+	s3Manager       *S3Manager
 
 	// Configuration
 	config *Config
@@ -112,6 +114,10 @@ type Config struct {
 	// SpiceDB
 	SpiceDBEndpoint string `env:"DB_SPICEDB_ENDPOINT"`
 	SpiceDBToken    string `env:"DB_SPICEDB_TOKEN"`
+
+	// S3
+	S3Region string `env:"DB_S3_REGION" envDefault:"us-east-1"`
+	S3Bucket string `env:"DB_S3_BUCKET"`
 
 	// Logging
 	LogLevel string `env:"DB_LOG_LEVEL" envDefault:"info"`
@@ -175,6 +181,16 @@ func (dm *DatabaseManager) Connect(ctx context.Context) error {
 		}
 	}
 
+	// Connect to S3 if configured
+	if dm.shouldConnectS3() {
+		dm.s3Manager = NewS3Manager(dm.config, dm.logger)
+		if err := dm.s3Manager.Connect(ctx); err != nil {
+			errors = append(errors, fmt.Errorf("failed to connect to S3: %w", err))
+		} else {
+			dm.logger.Info("connected to S3")
+		}
+	}
+
 	if len(errors) > 0 {
 		return fmt.Errorf("connection errors: %v", errors)
 	}
@@ -203,6 +219,13 @@ func (dm *DatabaseManager) GetSpiceManager() *SpiceManager {
 	return dm.spiceManager
 }
 
+// GetS3Manager returns the S3 manager
+func (dm *DatabaseManager) GetS3Manager() *S3Manager {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	return dm.s3Manager
+}
+
 // GetManager returns a database manager by backend type
 func (dm *DatabaseManager) GetManager(backend BackendType) DBManager {
 	dm.mu.RLock()
@@ -215,6 +238,8 @@ func (dm *DatabaseManager) GetManager(backend BackendType) DBManager {
 		return dm.dynamoManager
 	case BackendSpiceDB:
 		return dm.spiceManager
+	case BackendS3:
+		return dm.s3Manager
 	case BackendInMemory:
 		return nil // In-memory doesn't have a manager yet
 	default:
@@ -236,6 +261,9 @@ func (dm *DatabaseManager) GetAllManagers() []DBManager {
 	}
 	if dm.spiceManager != nil {
 		managers = append(managers, dm.spiceManager)
+	}
+	if dm.s3Manager != nil {
+		managers = append(managers, dm.s3Manager)
 	}
 	return managers
 }
@@ -265,6 +293,12 @@ func (dm *DatabaseManager) Close() error {
 		}
 	}
 
+	if dm.s3Manager != nil {
+		if err := dm.s3Manager.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close S3: %w", err))
+		}
+	}
+
 	if len(errors) > 0 {
 		return fmt.Errorf("errors closing connections: %v", errors)
 	}
@@ -284,6 +318,8 @@ func (dm *DatabaseManager) IsConnected(backend BackendType) bool {
 		return dm.dynamoManager != nil && dm.dynamoManager.IsConnected()
 	case BackendSpiceDB:
 		return dm.spiceManager != nil && dm.spiceManager.IsConnected()
+	case BackendS3:
+		return dm.s3Manager != nil && dm.s3Manager.IsConnected()
 	case BackendInMemory:
 		return true // In-memory is always available
 	default:
@@ -309,6 +345,12 @@ func (dm *DatabaseManager) shouldConnectSpice() bool {
 		(dm.config.SpiceDBEndpoint != "" && dm.config.SpiceDBToken != "")
 }
 
+// shouldConnectS3 determines if S3 should be connected
+func (dm *DatabaseManager) shouldConnectS3() bool {
+	return dm.config.PrimaryBackend == BackendS3 ||
+		dm.config.S3Bucket != ""
+}
+
 // loadConfigFromEnv loads configuration from environment variables
 func loadConfigFromEnv() *Config {
 	return &Config{
@@ -326,6 +368,8 @@ func loadConfigFromEnv() *Config {
 		DynamoDBTable:        getEnv("DB_DYNAMO_TABLE", ""),
 		SpiceDBEndpoint:      getEnv("DB_SPICEDB_ENDPOINT", ""),
 		SpiceDBToken:         getEnv("DB_SPICEDB_TOKEN", ""),
+		S3Region:             getEnv("DB_S3_REGION", "us-east-1"),
+		S3Bucket:             getEnv("DB_S3_BUCKET", ""),
 		LogLevel:             getEnv("DB_LOG_LEVEL", "info"),
 	}
 }
