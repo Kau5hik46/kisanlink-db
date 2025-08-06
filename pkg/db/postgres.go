@@ -354,6 +354,24 @@ func (pm *PostgresManager) BuildFilter(field string, operator FilterOperator, va
 	}
 }
 
+// AutoMigrateModels runs automigration for specific models
+func (pm *PostgresManager) AutoMigrateModels(ctx context.Context, models ...interface{}) error {
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection for migration: %w", err)
+	}
+
+	pm.logger.Info("running automigration for models", zap.Int("model_count", len(models)))
+
+	if err := db.WithContext(ctx).AutoMigrate(models...); err != nil {
+		pm.logger.Error("automigration failed", zap.Error(err))
+		return fmt.Errorf("automigration failed: %w", err)
+	}
+
+	pm.logger.Info("automigration completed successfully")
+	return nil
+}
+
 // GormLogger implements the gorm.Logger interface for structured logging
 type GormLogger struct {
 	logger *zap.Logger

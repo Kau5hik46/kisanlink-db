@@ -419,13 +419,22 @@ func (sm *S3Manager) ApplyFilters(query interface{}, filters []Filter) (interfac
 	return query, nil
 }
 
-// BuildFilter builds a filter for S3 queries
+// BuildFilter builds a filter for S3 operations
 func (sm *S3Manager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
 	return Filter{
 		Field:    field,
 		Operator: operator,
 		Value:    value,
 	}
+}
+
+// AutoMigrateModels runs automigration for specific models (S3 doesn't support schema migration)
+func (sm *S3Manager) AutoMigrateModels(ctx context.Context, models ...interface{}) error {
+	// S3 doesn't support schema migration like traditional databases
+	// This is a no-op for S3
+	sm.logger.Info("automigration skipped for S3 (not supported)",
+		zap.Int("model_count", len(models)))
+	return nil
 }
 
 // UploadFile uploads a file to S3

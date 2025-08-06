@@ -48,6 +48,9 @@ type DBManager interface {
 	// Filter Operations
 	ApplyFilters(query interface{}, filters []Filter) (interface{}, error)
 	BuildFilter(field string, operator FilterOperator, value interface{}) Filter
+
+	// Migration Operations
+	AutoMigrateModels(ctx context.Context, models ...interface{}) error
 }
 
 // Filter represents a database filter

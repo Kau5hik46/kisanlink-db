@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Kisanlink/kisanlink-db/pkg/core/hash"
+	"gorm.io/gorm"
 )
 
 // Model defines the base struct that all models should embed
@@ -185,6 +186,22 @@ func (b *BaseModel) BeforeSoftDelete() error {
 	now := time.Now()
 	b.DeletedAt = &now
 	return nil
+}
+
+// GORM Hooks - These are for GORM compatibility
+// BeforeCreateGORM is called by GORM before creating a new record
+func (b *BaseModel) BeforeCreateGORM(tx *gorm.DB) error {
+	return b.BeforeCreate()
+}
+
+// BeforeUpdateGORM is called by GORM before updating an existing record
+func (b *BaseModel) BeforeUpdateGORM(tx *gorm.DB) error {
+	return b.BeforeUpdate()
+}
+
+// BeforeDeleteGORM is called by GORM before hard deleting a record
+func (b *BaseModel) BeforeDeleteGORM(tx *gorm.DB) error {
+	return b.BeforeDelete()
 }
 
 // Repository defines the generic repository interface for CRUD operations
@@ -581,6 +598,21 @@ func (u *User) BeforeCreate() error {
 	}
 
 	return nil
+}
+
+// BeforeCreateGORM is called by GORM before creating a new record
+func (u *User) BeforeCreateGORM(tx *gorm.DB) error {
+	return u.BeforeCreate()
+}
+
+// BeforeUpdateGORM is called by GORM before updating an existing record
+func (u *User) BeforeUpdateGORM(tx *gorm.DB) error {
+	return u.BeforeUpdate()
+}
+
+// BeforeDeleteGORM is called by GORM before hard deleting a record
+func (u *User) BeforeDeleteGORM(tx *gorm.DB) error {
+	return u.BeforeDelete()
 }
 
 // UserRepository extends BaseFilterableRepository with User-specific methods

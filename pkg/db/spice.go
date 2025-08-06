@@ -343,13 +343,20 @@ func (sm *SpiceManager) ApplyFilters(query interface{}, filters []Filter) (inter
 	return query, nil
 }
 
-// BuildFilter creates a filter for SpiceDB (not applicable)
+// BuildFilter builds a filter for SpiceDB operations
 func (sm *SpiceManager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
-	// SpiceDB doesn't use traditional filters like SQL databases
-	// This method is kept for interface compatibility
 	return Filter{
 		Field:    field,
 		Operator: operator,
 		Value:    value,
 	}
+}
+
+// AutoMigrateModels runs automigration for specific models (SpiceDB doesn't support schema migration)
+func (sm *SpiceManager) AutoMigrateModels(ctx context.Context, models ...interface{}) error {
+	// SpiceDB doesn't support schema migration like traditional databases
+	// This is a no-op for SpiceDB
+	sm.logger.Info("automigration skipped for SpiceDB (not supported)",
+		zap.Int("model_count", len(models)))
+	return nil
 }

@@ -353,13 +353,22 @@ func (dm *DynamoManager) ApplyFilters(query interface{}, filters []Filter) (inte
 	return scanInput, nil
 }
 
-// BuildFilter creates a new filter
+// BuildFilter builds a filter for DynamoDB operations
 func (dm *DynamoManager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
 	return Filter{
 		Field:    field,
 		Operator: operator,
 		Value:    value,
 	}
+}
+
+// AutoMigrateModels runs automigration for specific models (DynamoDB doesn't support schema migration)
+func (dm *DynamoManager) AutoMigrateModels(ctx context.Context, models ...interface{}) error {
+	// DynamoDB doesn't support schema migration like traditional databases
+	// This is a no-op for DynamoDB
+	dm.logger.Info("automigration skipped for DynamoDB (not supported)",
+		zap.Int("model_count", len(models)))
+	return nil
 }
 
 // Helper methods for DynamoDB operations
