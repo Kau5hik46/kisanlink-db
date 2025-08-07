@@ -538,6 +538,8 @@ type FilterableRepository[T ModelInterface] interface {
 	Find(ctx context.Context, filter *Filter) ([]T, error)
 	FindOne(ctx context.Context, filter *Filter) (T, error)
 	CountWithFilter(ctx context.Context, filter *Filter) (int64, error)
+	GetStats(ctx context.Context) (map[string]int64, error)
+	FindManyWithRelationships(ctx context.Context, ids []string, filter *Filter) ([]T, error)
 }
 
 // BaseFilterableRepository provides a default implementation of FilterableRepository
@@ -633,6 +635,115 @@ func (r *BaseFilterableRepository[T]) CountWithFilter(ctx context.Context, filte
 	}
 
 	return count, nil
+}
+
+// GetStats concurrently calculates various statistics using goroutines
+func (r *BaseFilterableRepository[T]) GetStats(ctx context.Context) (map[string]int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Create channels for different stats
+	totalChan := make(chan int64, 1)
+	activeChan := make(chan int64, 1)
+	deletedChan := make(chan int64, 1)
+
+	// Calculate total count
+	go func() {
+		var count int64
+		for range r.models {
+			count++
+		}
+		totalChan <- count
+	}()
+
+	// Calculate active count
+	go func() {
+		var count int64
+		for _, model := range r.models {
+			if !model.IsDeleted() {
+				count++
+			}
+		}
+		activeChan <- count
+	}()
+
+	// Calculate deleted count
+	go func() {
+		var count int64
+		for _, model := range r.models {
+			if model.IsDeleted() {
+				count++
+			}
+		}
+		deletedChan <- count
+	}()
+
+	// Collect results
+	stats := make(map[string]int64)
+	stats["total"] = <-totalChan
+	stats["active"] = <-activeChan
+	stats["deleted"] = <-deletedChan
+
+	return stats, nil
+}
+
+// FindManyWithRelationships efficiently loads multiple models with their relationships using goroutines
+func (r *BaseFilterableRepository[T]) FindManyWithRelationships(ctx context.Context, ids []string, filter *Filter) ([]T, error) {
+	if len(ids) == 0 {
+		return []T{}, nil
+	}
+
+	// Use goroutines to load models concurrently
+	modelsChan := make(chan []T, 1)
+	modelsErrChan := make(chan error, 1)
+
+	go func() {
+		var results []T
+		for _, model := range r.models {
+			// Check if model ID is in the requested IDs
+			found := false
+			for _, id := range ids {
+				if model.GetID() == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+
+			// Apply filter if provided
+			if filter != nil {
+				matches, err := r.evaluator.Evaluate(filter, model)
+				if err != nil {
+					modelsErrChan <- fmt.Errorf("filter evaluation failed: %w", err)
+					return
+				}
+				if !matches {
+					continue
+				}
+			}
+
+			results = append(results, model)
+		}
+
+		// Apply sorting if specified in filter
+		if filter != nil && len(filter.Sort) > 0 {
+			r.sortResults(results, filter.Sort)
+		}
+
+		modelsChan <- results
+	}()
+
+	// Wait for results
+	select {
+	case models := <-modelsChan:
+		return models, nil
+	case err := <-modelsErrChan:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // shouldIncludeDeleted checks if deleted records should be included
