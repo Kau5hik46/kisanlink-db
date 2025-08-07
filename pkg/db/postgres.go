@@ -281,7 +281,7 @@ func (pm *PostgresManager) Delete(ctx context.Context, id interface{}) error {
 	return db.WithContext(ctx).Delete("", id).Error
 }
 
-// List retrieves records with optional filters
+// List retrieves records from PostgreSQL with basic filtering
 func (pm *PostgresManager) List(ctx context.Context, filters []Filter, model interface{}) error {
 	db, err := pm.GetDB(ctx, true)
 	if err != nil {
@@ -289,69 +289,44 @@ func (pm *PostgresManager) List(ctx context.Context, filters []Filter, model int
 	}
 
 	query := db.WithContext(ctx)
-	filteredQuery, err := pm.ApplyFilters(query, filters)
-	if err != nil {
-		return fmt.Errorf("failed to apply filters: %w", err)
-	}
 
-	gormQuery, ok := filteredQuery.(*gorm.DB)
-	if !ok {
-		return fmt.Errorf("failed to convert filtered query to *gorm.DB")
-	}
-
-	return gormQuery.Find(model).Error
-}
-
-// ApplyFilters applies filters to a GORM query
-func (pm *PostgresManager) ApplyFilters(query interface{}, filters []Filter) (interface{}, error) {
-	gormQuery, ok := query.(*gorm.DB)
-	if !ok {
-		return nil, fmt.Errorf("query must be *gorm.DB")
-	}
-
-	for _, filter := range filters {
-		switch filter.Operator {
-		case FilterOpEqual:
-			gormQuery = gormQuery.Where(filter.Field+" = ?", filter.Value)
-		case FilterOpNotEqual:
-			gormQuery = gormQuery.Where(filter.Field+" != ?", filter.Value)
-		case FilterOpGreaterThan:
-			gormQuery = gormQuery.Where(filter.Field+" > ?", filter.Value)
-		case FilterOpLessThan:
-			gormQuery = gormQuery.Where(filter.Field+" < ?", filter.Value)
-		case FilterOpGreaterEqual:
-			gormQuery = gormQuery.Where(filter.Field+" >= ?", filter.Value)
-		case FilterOpLessEqual:
-			gormQuery = gormQuery.Where(filter.Field+" <= ?", filter.Value)
-		case FilterOpIn:
-			gormQuery = gormQuery.Where(filter.Field+" IN ?", filter.Value)
-		case FilterOpNotIn:
-			gormQuery = gormQuery.Where(filter.Field+" NOT IN ?", filter.Value)
-		case FilterOpLike:
-			gormQuery = gormQuery.Where(filter.Field+" LIKE ?", filter.Value)
-		case FilterOpILike:
-			gormQuery = gormQuery.Where(filter.Field+" ILIKE ?", filter.Value)
-		case FilterOpContains:
-			gormQuery = gormQuery.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value)+"%")
-		case FilterOpStartsWith:
-			gormQuery = gormQuery.Where(filter.Field+" LIKE ?", fmt.Sprint(filter.Value)+"%")
-		case FilterOpEndsWith:
-			gormQuery = gormQuery.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value))
-		default:
-			return nil, fmt.Errorf("unsupported filter operator: %s", filter.Operator)
+	// Apply basic filters if provided
+	if len(filters) > 0 {
+		for _, filter := range filters {
+			switch filter.Operator {
+			case FilterOpEqual:
+				query = query.Where(filter.Field+" = ?", filter.Value)
+			case FilterOpNotEqual:
+				query = query.Where(filter.Field+" != ?", filter.Value)
+			case FilterOpGreaterThan:
+				query = query.Where(filter.Field+" > ?", filter.Value)
+			case FilterOpLessThan:
+				query = query.Where(filter.Field+" < ?", filter.Value)
+			case FilterOpGreaterEqual:
+				query = query.Where(filter.Field+" >= ?", filter.Value)
+			case FilterOpLessEqual:
+				query = query.Where(filter.Field+" <= ?", filter.Value)
+			case FilterOpIn:
+				query = query.Where(filter.Field+" IN ?", filter.Value)
+			case FilterOpNotIn:
+				query = query.Where(filter.Field+" NOT IN ?", filter.Value)
+			case FilterOpLike:
+				query = query.Where(filter.Field+" LIKE ?", filter.Value)
+			case FilterOpILike:
+				query = query.Where(filter.Field+" ILIKE ?", filter.Value)
+			case FilterOpContains:
+				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value)+"%")
+			case FilterOpStartsWith:
+				query = query.Where(filter.Field+" LIKE ?", fmt.Sprint(filter.Value)+"%")
+			case FilterOpEndsWith:
+				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value))
+			default:
+				return fmt.Errorf("unsupported filter operator: %s", filter.Operator)
+			}
 		}
 	}
 
-	return gormQuery, nil
-}
-
-// BuildFilter creates a new filter
-func (pm *PostgresManager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
-	return Filter{
-		Field:    field,
-		Operator: operator,
-		Value:    value,
-	}
+	return query.Find(model).Error
 }
 
 // AutoMigrateModels runs automigration for specific models

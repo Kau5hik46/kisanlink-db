@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 )
 
-// ExampleUser represents a user model for demonstration
+// ExampleUser is a simple example model for CRUD operations
 type ExampleUser struct {
 	ID        string    `json:"id" gorm:"primaryKey"`
 	Name      string    `json:"name"`
@@ -79,8 +81,8 @@ func ExampleCRUD() {
 	// Example 4: List users with filters
 	var users []ExampleUser
 	filters := []Filter{
-		postgresManager.BuildFilter("active", FilterOpEqual, true),
-		postgresManager.BuildFilter("age", FilterOpGreaterThan, 25),
+		{Field: "active", Operator: FilterOpEqual, Value: true},
+		{Field: "age", Operator: FilterOpGreaterThan, Value: 25},
 	}
 
 	if err := postgresManager.List(ctx, filters, &users); err != nil {
@@ -141,7 +143,7 @@ func ExampleDynamoDBCRUD() {
 	// List users with filters
 	var users []ExampleUser
 	filters := []Filter{
-		dynamoManager.BuildFilter("active", FilterOpEqual, true),
+		{Field: "active", Operator: FilterOpEqual, Value: true},
 	}
 
 	if err := dynamoManager.List(ctx, filters, &users); err != nil {
@@ -176,25 +178,25 @@ func ExampleFilterOperations() {
 	}
 
 	// Example 1: Equal filter
-	equalFilter := postgresManager.BuildFilter("email", FilterOpEqual, "john@example.com")
+	equalFilter := Filter{Field: "email", Operator: FilterOpEqual, Value: "john@example.com"}
 
 	// Example 2: Greater than filter
-	ageFilter := postgresManager.BuildFilter("age", FilterOpGreaterThan, 25)
+	ageFilter := Filter{Field: "age", Operator: FilterOpGreaterThan, Value: 25}
 
 	// Example 3: Contains filter
-	containsFilter := postgresManager.BuildFilter("name", FilterOpContains, "John")
+	containsFilter := Filter{Field: "name", Operator: FilterOpContains, Value: "John"}
 
-	// Example 4: In filter
-	inFilter := postgresManager.BuildFilter("status", FilterOpIn, []string{"active", "pending"})
+	// Example 4: IN filter
+	inFilter := Filter{Field: "status", Operator: FilterOpIn, Value: []string{"active", "pending"}}
 
-	// Example 5: Like filter
-	likeFilter := postgresManager.BuildFilter("email", FilterOpLike, "%@example.com")
+	// Example 5: LIKE filter
+	likeFilter := Filter{Field: "email", Operator: FilterOpLike, Value: "%@example.com"}
 
-	// Example 6: Between filter (using GreaterEqual and LessEqual)
-	startDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	endDate := time.Date(2023, 12, 31, 23, 59, 59, 0, time.UTC)
-	startFilter := postgresManager.BuildFilter("created_at", FilterOpGreaterEqual, startDate)
-	endFilter := postgresManager.BuildFilter("created_at", FilterOpLessEqual, endDate)
+	// Example 6: Date range filters
+	startDate := time.Now().AddDate(0, -1, 0) // 1 month ago
+	endDate := time.Now()
+	startFilter := Filter{Field: "created_at", Operator: FilterOpGreaterEqual, Value: startDate}
+	endFilter := Filter{Field: "created_at", Operator: FilterOpLessEqual, Value: endDate}
 
 	// Combine filters
 	filters := []Filter{
@@ -323,4 +325,62 @@ func ExampleErrorHandling() {
 	if err := postgresManager.List(ctx, invalidFilters, &users); err != nil {
 		log.Printf("Expected error for invalid filters: %v", err)
 	}
+}
+
+// ExampleBaseFilterableRepository demonstrates using the base filterable repository
+func ExampleBaseFilterableRepository() {
+	fmt.Println("=== Base Filterable Repository Examples ===")
+
+	// Example 1: Creating a filter using the base filter builder
+	filter := base.NewFilterBuilder().
+		Where("name", base.OpEqual, "John Doe").
+		Where("age", base.OpGreaterThan, 25).
+		Where("email", base.OpContains, "@example.com").
+		Sort("created_at", "desc").
+		Page(1, 10).
+		Build()
+
+	fmt.Printf("Created complex filter with %d conditions\n", len(filter.Group.Conditions))
+
+	// Example 2: Using OR conditions
+	orFilter := base.NewFilterBuilder().
+		Where("status", base.OpEqual, "active").
+		Or(
+			base.FilterCondition{Field: "role", Operator: base.OpEqual, Value: "admin"},
+			base.FilterCondition{Field: "role", Operator: base.OpEqual, Value: "moderator"},
+		).
+		Build()
+
+	fmt.Printf("Created OR filter with %d groups\n", len(orFilter.Group.Groups))
+
+	// Example 3: Date range filtering
+	dateFilter := base.NewFilterBuilder().
+		WhereBetween("created_at", time.Now().AddDate(0, -1, 0), time.Now()).
+		Where("is_deleted", base.OpEqual, false).
+		Build()
+
+	fmt.Printf("Created date range filter with %d conditions\n", len(dateFilter.Group.Conditions))
+
+	// Example 4: IN clause filtering
+	inFilter := base.NewFilterBuilder().
+		WhereIn("category", []interface{}{"electronics", "books", "clothing"}).
+		Where("price", base.OpGreaterEqual, 10.0).
+		Build()
+
+	fmt.Printf("Created IN filter with %d conditions\n", len(inFilter.Group.Conditions))
+
+	// Example 5: Text search with multiple conditions
+	searchFilter := base.NewFilterBuilder().
+		Where("title", base.OpContains, "search term").
+		Or(
+			base.FilterCondition{Field: "description", Operator: base.OpContains, Value: "search term"},
+			base.FilterCondition{Field: "tags", Operator: base.OpContains, Value: "search term"},
+		).
+		Sort("relevance", "desc").
+		Sort("created_at", "desc").
+		Page(1, 20).
+		Build()
+
+	fmt.Printf("Created search filter with %d conditions and %d sort fields\n",
+		len(searchFilter.Group.Conditions), len(searchFilter.Sort))
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -364,68 +365,63 @@ func (sm *S3Manager) Delete(ctx context.Context, id interface{}) error {
 	return nil
 }
 
-// List lists files in S3 with optional filters
+// List retrieves files from S3 with basic filtering
 func (sm *S3Manager) List(ctx context.Context, filters []Filter, model interface{}) error {
-	files, ok := model.(*[]S3File)
-	if !ok {
-		return fmt.Errorf("model must be of type *[]S3File")
+	if sm.client == nil {
+		return fmt.Errorf("s3 client not connected")
 	}
 
-	prefix := ""
-	for _, filter := range filters {
-		if filter.Field == "prefix" && filter.Operator == FilterOpEqual {
-			if prefixStr, ok := filter.Value.(string); ok {
-				prefix = prefixStr
+	// For S3, we'll do a list objects operation
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(sm.config.S3Bucket),
+	}
+
+	// Apply basic filters if provided
+	if len(filters) > 0 {
+		for _, filter := range filters {
+			switch filter.Operator {
+			case FilterOpEqual:
+				if filter.Field == "prefix" {
+					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
+				}
+			case FilterOpStartsWith:
+				if filter.Field == "prefix" {
+					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
+				}
+			default:
+				// S3 has limited filtering capabilities
+				sm.logger.Warn("unsupported filter operator for S3",
+					zap.String("operator", string(filter.Operator)))
 			}
 		}
 	}
 
-	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(sm.config.S3Bucket),
-	}
-	if prefix != "" {
-		input.Prefix = aws.String(prefix)
-	}
-
-	output, err := sm.client.ListObjectsV2(ctx, input)
+	result, err := sm.client.ListObjectsV2(ctx, listInput)
 	if err != nil {
-		return fmt.Errorf("failed to list files: %w", err)
+		return fmt.Errorf("failed to list objects: %w", err)
 	}
 
-	*files = make([]S3File, 0, len(output.Contents))
-	for _, obj := range output.Contents {
+	// Convert results to slice
+	sliceValue := reflect.ValueOf(model).Elem()
+	for _, object := range result.Contents {
 		size := int64(0)
-		if obj.Size != nil {
-			size = *obj.Size
+		if object.Size != nil {
+			size = *object.Size
 		}
-		file := S3File{
-			ID:        sm.extractIDFromKey(aws.ToString(obj.Key)),
-			Key:       aws.ToString(obj.Key),
+
+		file := &S3File{
+			ID:        sm.extractIDFromKey(*object.Key),
+			Key:       *object.Key,
 			Bucket:    sm.config.S3Bucket,
 			Size:      size,
-			CreatedAt: aws.ToTime(obj.LastModified),
-			UpdatedAt: aws.ToTime(obj.LastModified),
+			CreatedAt: *object.LastModified,
+			UpdatedAt: *object.LastModified,
+			ETag:      strings.Trim(*object.ETag, "\""),
 		}
-		*files = append(*files, file)
+		sliceValue.Set(reflect.Append(sliceValue, reflect.ValueOf(file).Elem()))
 	}
 
 	return nil
-}
-
-// ApplyFilters applies filters to S3 queries (limited support)
-func (sm *S3Manager) ApplyFilters(query interface{}, filters []Filter) (interface{}, error) {
-	// S3 has limited filtering capabilities, mainly prefix-based
-	// This is a simplified implementation
-	return query, nil
-}
-
-// BuildFilter builds a filter for S3 operations
-func (sm *S3Manager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
-	return Filter{
-		Field:    field,
-		Operator: operator,
-		Value:    value,
-	}
 }
 
 // AutoMigrateModels runs automigration for specific models (S3 doesn't support schema migration)

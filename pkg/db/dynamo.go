@@ -247,7 +247,7 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 	return err
 }
 
-// List retrieves records with optional filters from DynamoDB
+// List retrieves records from DynamoDB with basic filtering
 func (dm *DynamoManager) List(ctx context.Context, filters []Filter, model interface{}) error {
 	client := dm.GetClient()
 	if client == nil {
@@ -259,13 +259,60 @@ func (dm *DynamoManager) List(ctx context.Context, filters []Filter, model inter
 		TableName: aws.String(dm.config.DynamoDBTable),
 	}
 
-	// Apply filters if provided
+	// Apply basic filters if provided
 	if len(filters) > 0 {
-		filteredInput, err := dm.ApplyFilters(scanInput, filters)
-		if err != nil {
-			return fmt.Errorf("failed to apply filters: %w", err)
+		var filterExpressions []string
+		var expressionAttributeNames map[string]string
+		var expressionAttributeValues map[string]types.AttributeValue
+
+		for i, filter := range filters {
+			fieldName := fmt.Sprintf("#field%d", i)
+			valueName := fmt.Sprintf(":value%d", i)
+
+			if expressionAttributeNames == nil {
+				expressionAttributeNames = make(map[string]string)
+			}
+			if expressionAttributeValues == nil {
+				expressionAttributeValues = make(map[string]types.AttributeValue)
+			}
+
+			expressionAttributeNames[fieldName] = filter.Field
+
+			// Convert value to DynamoDB attribute value
+			attrValue, err := dm.valueToAttributeValue(filter.Value)
+			if err != nil {
+				return fmt.Errorf("failed to convert value: %w", err)
+			}
+			expressionAttributeValues[valueName] = attrValue
+
+			var expression string
+			switch filter.Operator {
+			case FilterOpEqual:
+				expression = fmt.Sprintf("%s = %s", fieldName, valueName)
+			case FilterOpNotEqual:
+				expression = fmt.Sprintf("%s <> %s", fieldName, valueName)
+			case FilterOpGreaterThan:
+				expression = fmt.Sprintf("%s > %s", fieldName, valueName)
+			case FilterOpLessThan:
+				expression = fmt.Sprintf("%s < %s", fieldName, valueName)
+			case FilterOpGreaterEqual:
+				expression = fmt.Sprintf("%s >= %s", fieldName, valueName)
+			case FilterOpLessEqual:
+				expression = fmt.Sprintf("%s <= %s", fieldName, valueName)
+			case FilterOpContains:
+				expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
+			default:
+				return fmt.Errorf("unsupported filter operator for DynamoDB: %s", filter.Operator)
+			}
+
+			filterExpressions = append(filterExpressions, expression)
 		}
-		scanInput = filteredInput.(*dynamodb.ScanInput)
+
+		if len(filterExpressions) > 0 {
+			scanInput.FilterExpression = aws.String(strings.Join(filterExpressions, " AND "))
+			scanInput.ExpressionAttributeNames = expressionAttributeNames
+			scanInput.ExpressionAttributeValues = expressionAttributeValues
+		}
 	}
 
 	result, err := client.Scan(ctx, scanInput)
@@ -284,82 +331,6 @@ func (dm *DynamoManager) List(ctx context.Context, filters []Filter, model inter
 	}
 
 	return nil
-}
-
-// ApplyFilters applies filters to a DynamoDB scan input
-func (dm *DynamoManager) ApplyFilters(query interface{}, filters []Filter) (interface{}, error) {
-	scanInput, ok := query.(*dynamodb.ScanInput)
-	if !ok {
-		return nil, fmt.Errorf("query must be *dynamodb.ScanInput")
-	}
-
-	if len(filters) == 0 {
-		return scanInput, nil
-	}
-
-	var filterExpressions []string
-	var expressionAttributeNames map[string]string
-	var expressionAttributeValues map[string]types.AttributeValue
-
-	for i, filter := range filters {
-		fieldName := fmt.Sprintf("#field%d", i)
-		valueName := fmt.Sprintf(":value%d", i)
-
-		if expressionAttributeNames == nil {
-			expressionAttributeNames = make(map[string]string)
-		}
-		if expressionAttributeValues == nil {
-			expressionAttributeValues = make(map[string]types.AttributeValue)
-		}
-
-		expressionAttributeNames[fieldName] = filter.Field
-
-		// Convert value to DynamoDB attribute value
-		attrValue, err := dm.valueToAttributeValue(filter.Value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert value: %w", err)
-		}
-		expressionAttributeValues[valueName] = attrValue
-
-		var expression string
-		switch filter.Operator {
-		case FilterOpEqual:
-			expression = fmt.Sprintf("%s = %s", fieldName, valueName)
-		case FilterOpNotEqual:
-			expression = fmt.Sprintf("%s <> %s", fieldName, valueName)
-		case FilterOpGreaterThan:
-			expression = fmt.Sprintf("%s > %s", fieldName, valueName)
-		case FilterOpLessThan:
-			expression = fmt.Sprintf("%s < %s", fieldName, valueName)
-		case FilterOpGreaterEqual:
-			expression = fmt.Sprintf("%s >= %s", fieldName, valueName)
-		case FilterOpLessEqual:
-			expression = fmt.Sprintf("%s <= %s", fieldName, valueName)
-		case FilterOpContains:
-			expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
-		default:
-			return nil, fmt.Errorf("unsupported filter operator for DynamoDB: %s", filter.Operator)
-		}
-
-		filterExpressions = append(filterExpressions, expression)
-	}
-
-	if len(filterExpressions) > 0 {
-		scanInput.FilterExpression = aws.String(strings.Join(filterExpressions, " AND "))
-		scanInput.ExpressionAttributeNames = expressionAttributeNames
-		scanInput.ExpressionAttributeValues = expressionAttributeValues
-	}
-
-	return scanInput, nil
-}
-
-// BuildFilter builds a filter for DynamoDB operations
-func (dm *DynamoManager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
-	return Filter{
-		Field:    field,
-		Operator: operator,
-		Value:    value,
-	}
 }
 
 // AutoMigrateModels runs automigration for specific models (DynamoDB doesn't support schema migration)

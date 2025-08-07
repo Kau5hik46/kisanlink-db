@@ -45,10 +45,6 @@ type DBManager interface {
 	Delete(ctx context.Context, id interface{}) error
 	List(ctx context.Context, filters []Filter, model interface{}) error
 
-	// Filter Operations
-	ApplyFilters(query interface{}, filters []Filter) (interface{}, error)
-	BuildFilter(field string, operator FilterOperator, value interface{}) Filter
-
 	// Migration Operations
 	AutoMigrateModels(ctx context.Context, models ...interface{}) error
 }

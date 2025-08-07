@@ -336,22 +336,6 @@ func (sm *SpiceManager) List(ctx context.Context, filters []Filter, model interf
 	return nil
 }
 
-// ApplyFilters applies filters to a query (not applicable for SpiceDB)
-func (sm *SpiceManager) ApplyFilters(query interface{}, filters []Filter) (interface{}, error) {
-	// SpiceDB doesn't use traditional query filters like SQL databases
-	// This method is kept for interface compatibility but doesn't apply filters
-	return query, nil
-}
-
-// BuildFilter builds a filter for SpiceDB operations
-func (sm *SpiceManager) BuildFilter(field string, operator FilterOperator, value interface{}) Filter {
-	return Filter{
-		Field:    field,
-		Operator: operator,
-		Value:    value,
-	}
-}
-
 // AutoMigrateModels runs automigration for specific models (SpiceDB doesn't support schema migration)
 func (sm *SpiceManager) AutoMigrateModels(ctx context.Context, models ...interface{}) error {
 	// SpiceDB doesn't support schema migration like traditional databases
