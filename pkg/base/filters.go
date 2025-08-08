@@ -335,7 +335,11 @@ func (fe *FilterEvaluator) getFieldValue(field string, model ModelInterface) (in
 
 	// Use reflection for other fields
 	val := reflect.ValueOf(model)
-	if val.Kind() == reflect.Ptr {
+	// Unwrap interface and pointer layers to reach the concrete struct
+	for val.IsValid() && (val.Kind() == reflect.Interface || val.Kind() == reflect.Ptr) {
+		if val.IsNil() {
+			break
+		}
 		val = val.Elem()
 	}
 
@@ -353,9 +357,14 @@ func (fe *FilterEvaluator) getFieldValue(field string, model ModelInterface) (in
 		// If not found, try to find it in embedded structs
 		for i := 0; i < val.NumField(); i++ {
 			fieldVal := val.Field(i)
-			if fieldVal.Kind() == reflect.Struct {
+			// Unwrap pointers to inspect struct fields
+			fv := fieldVal
+			if fv.Kind() == reflect.Ptr && !fv.IsNil() {
+				fv = fv.Elem()
+			}
+			if fv.Kind() == reflect.Struct {
 				for _, fname := range fieldNames {
-					embeddedField := fieldVal.FieldByName(fname)
+					embeddedField := fv.FieldByName(fname)
 					if embeddedField.IsValid() {
 						return embeddedField.Interface(), nil
 					}
@@ -383,6 +392,27 @@ func (fe *FilterEvaluator) getFieldValue(field string, model ModelInterface) (in
 
 // Comparison methods
 func (fe *FilterEvaluator) compareEqual(a, b interface{}) bool {
+	// Dereference pointers for fair comparison
+	if a != nil {
+		av := reflect.ValueOf(a)
+		if av.Kind() == reflect.Ptr {
+			if av.IsNil() {
+				a = nil
+			} else {
+				a = av.Elem().Interface()
+			}
+		}
+	}
+	if b != nil {
+		bv := reflect.ValueOf(b)
+		if bv.Kind() == reflect.Ptr {
+			if bv.IsNil() {
+				b = nil
+			} else {
+				b = bv.Elem().Interface()
+			}
+		}
+	}
 	return reflect.DeepEqual(a, b)
 }
 
@@ -529,7 +559,14 @@ func (fe *FilterEvaluator) toString(v interface{}) string {
 	if v == nil {
 		return ""
 	}
-	return fmt.Sprintf("%v", v)
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			return ""
+		}
+		rv = rv.Elem()
+	}
+	return fmt.Sprintf("%v", rv.Interface())
 }
 
 // FilterableRepository extends Repository with filtering capabilities
@@ -583,14 +620,18 @@ func (r *BaseFilterableRepository[T]) Find(ctx context.Context, filter *Filter) 
 		r.sortResults(results, filter.Sort)
 	}
 
-	// Apply pagination
-	limit, offset := r.getPaginationParams(filter)
-	if offset < len(results) {
-		end := offset + limit
-		if end > len(results) {
-			end = len(results)
+	// Apply pagination only when Page/PageSize are set explicitly to avoid cutting small datasets in-memory
+	if filter.Page > 0 && filter.PageSize > 0 {
+		limit, offset := r.getPaginationParams(filter)
+		if offset < len(results) {
+			end := offset + limit
+			if end > len(results) {
+				end = len(results)
+			}
+			results = results[offset:end]
+		} else {
+			results = []T{}
 		}
-		results = results[offset:end]
 	}
 
 	return results, nil
