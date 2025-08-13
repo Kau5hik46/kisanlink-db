@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -248,7 +249,7 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves records from DynamoDB with basic filtering
-func (dm *DynamoManager) List(ctx context.Context, filters []Filter, model interface{}) error {
+func (dm *DynamoManager) List(ctx context.Context, filters []base.Filter, model interface{}) error {
 	client := dm.GetClient()
 	if client == nil {
 		return fmt.Errorf("dynamodb client not connected")
@@ -287,19 +288,19 @@ func (dm *DynamoManager) List(ctx context.Context, filters []Filter, model inter
 
 			var expression string
 			switch filter.Operator {
-			case FilterOpEqual:
+			case base.FilterOpEqual:
 				expression = fmt.Sprintf("%s = %s", fieldName, valueName)
-			case FilterOpNotEqual:
+			case base.FilterOpNotEqual:
 				expression = fmt.Sprintf("%s <> %s", fieldName, valueName)
-			case FilterOpGreaterThan:
+			case base.FilterOpGreaterThan:
 				expression = fmt.Sprintf("%s > %s", fieldName, valueName)
-			case FilterOpLessThan:
+			case base.FilterOpLessThan:
 				expression = fmt.Sprintf("%s < %s", fieldName, valueName)
-			case FilterOpGreaterEqual:
+			case base.FilterOpGreaterEqual:
 				expression = fmt.Sprintf("%s >= %s", fieldName, valueName)
-			case FilterOpLessEqual:
+			case base.FilterOpLessEqual:
 				expression = fmt.Sprintf("%s <= %s", fieldName, valueName)
-			case FilterOpContains:
+			case base.FilterOpContains:
 				expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
 			default:
 				return fmt.Errorf("unsupported filter operator for DynamoDB: %s", filter.Operator)

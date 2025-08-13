@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"go.uber.org/zap"
 )
 
@@ -43,7 +44,7 @@ type DBManager interface {
 	GetByID(ctx context.Context, id interface{}, model interface{}) error
 	Update(ctx context.Context, model interface{}) error
 	Delete(ctx context.Context, id interface{}) error
-	List(ctx context.Context, filters []Filter, model interface{}) error
+	List(ctx context.Context, filters []base.Filter, model interface{}) error
 
 	// Migration Operations
 	AutoMigrateModels(ctx context.Context, models ...interface{}) error
