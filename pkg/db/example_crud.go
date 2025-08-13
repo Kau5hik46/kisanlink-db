@@ -80,9 +80,9 @@ func ExampleCRUD() {
 
 	// Example 4: List users with filters
 	var users []ExampleUser
-	filters := []Filter{
-		{Field: "active", Operator: FilterOpEqual, Value: true},
-		{Field: "age", Operator: FilterOpGreaterThan, Value: 25},
+	filters := []base.FilterCondition{
+		{Field: "active", Operator: base.OpEqual, Value: true},
+		{Field: "age", Operator: base.OpGreaterThan, Value: 25},
 	}
 
 	if err := postgresManager.List(ctx, filters, &users); err != nil {
@@ -142,8 +142,8 @@ func ExampleDynamoDBCRUD() {
 
 	// List users with filters
 	var users []ExampleUser
-	filters := []Filter{
-		{Field: "active", Operator: FilterOpEqual, Value: true},
+	filters := []base.FilterCondition{
+		{Field: "active", Operator: base.OpEqual, Value: true},
 	}
 
 	if err := dynamoManager.List(ctx, filters, &users); err != nil {
@@ -178,28 +178,28 @@ func ExampleFilterOperations() {
 	}
 
 	// Example 1: Equal filter
-	equalFilter := Filter{Field: "email", Operator: FilterOpEqual, Value: "john@example.com"}
+	equalFilter := base.FilterCondition{Field: "email", Operator: base.OpEqual, Value: "john@example.com"}
 
 	// Example 2: Greater than filter
-	ageFilter := Filter{Field: "age", Operator: FilterOpGreaterThan, Value: 25}
+	ageFilter := base.FilterCondition{Field: "age", Operator: base.OpGreaterThan, Value: 25}
 
 	// Example 3: Contains filter
-	containsFilter := Filter{Field: "name", Operator: FilterOpContains, Value: "John"}
+	containsFilter := base.FilterCondition{Field: "name", Operator: base.OpContains, Value: "John"}
 
 	// Example 4: IN filter
-	inFilter := Filter{Field: "status", Operator: FilterOpIn, Value: []string{"active", "pending"}}
+	inFilter := base.FilterCondition{Field: "status", Operator: base.OpIn, Value: []string{"active", "pending"}}
 
 	// Example 5: LIKE filter
-	likeFilter := Filter{Field: "email", Operator: FilterOpLike, Value: "%@example.com"}
+	likeFilter := base.FilterCondition{Field: "email", Operator: base.OpLike, Value: "%@example.com"}
 
 	// Example 6: Date range filters
 	startDate := time.Now().AddDate(0, -1, 0) // 1 month ago
 	endDate := time.Now()
-	startFilter := Filter{Field: "created_at", Operator: FilterOpGreaterEqual, Value: startDate}
-	endFilter := Filter{Field: "created_at", Operator: FilterOpLessEqual, Value: endDate}
+	startFilter := base.FilterCondition{Field: "created_at", Operator: base.OpGreaterEqual, Value: startDate}
+	endFilter := base.FilterCondition{Field: "created_at", Operator: base.OpLessEqual, Value: endDate}
 
 	// Combine filters
-	filters := []Filter{
+	filters := []base.FilterCondition{
 		equalFilter,
 		ageFilter,
 		containsFilter,
@@ -318,7 +318,7 @@ func ExampleErrorHandling() {
 
 	// Try to apply invalid filters
 	var users []ExampleUser
-	invalidFilters := []Filter{
+	invalidFilters := []base.FilterCondition{
 		{Field: "invalid_field", Operator: "invalid_operator", Value: "test"},
 	}
 

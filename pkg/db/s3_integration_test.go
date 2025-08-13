@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"go.uber.org/zap"
 )
 
@@ -365,8 +366,8 @@ func (ts *S3IntegrationTestSuite) testS3FileListing() {
 
 	// Test listing all files in test-listing folder
 	var files []S3File
-	filters := []Filter{
-		ts.s3Manager.BuildFilter("prefix", FilterOpEqual, "test-listing/"),
+	filters := []base.FilterCondition{
+		{Field: "prefix", Operator: base.OpEqual, Value: "test-listing/"},
 	}
 
 	err := ts.s3Manager.List(ts.ctx, filters, &files)
@@ -395,8 +396,8 @@ func (ts *S3IntegrationTestSuite) testS3FileListing() {
 
 	// Test listing files in specific subfolder
 	var folder1Files []S3File
-	folder1Filters := []Filter{
-		ts.s3Manager.BuildFilter("prefix", FilterOpEqual, "test-listing/folder1/"),
+	folder1Filters := []base.FilterCondition{
+		{Field: "prefix", Operator: base.OpEqual, Value: "test-listing/folder1/"},
 	}
 
 	err = ts.s3Manager.List(ts.ctx, folder1Filters, &folder1Files)
@@ -588,7 +589,7 @@ func (ts *S3IntegrationTestSuite) testS3CRUDOperations() {
 
 	// Test List operation
 	var files []S3File
-	err = ts.s3Manager.List(ts.ctx, []Filter{}, &files)
+	err = ts.s3Manager.List(ts.ctx, []base.FilterCondition{}, &files)
 	if err != nil {
 		ts.logger.Error("❌ Failed to list files", zap.Error(err))
 		return
@@ -630,8 +631,8 @@ func (ts *S3IntegrationTestSuite) cleanupS3TestData() {
 
 	for _, prefix := range testPrefixes {
 		var files []S3File
-		filters := []Filter{
-			ts.s3Manager.BuildFilter("prefix", FilterOpEqual, prefix),
+		filters := []base.FilterCondition{
+			{Field: "prefix", Operator: base.OpEqual, Value: prefix},
 		}
 
 		err := ts.s3Manager.List(ts.ctx, filters, &files)

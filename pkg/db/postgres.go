@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/sony/gobreaker"
 	"go.uber.org/zap"
@@ -282,7 +283,7 @@ func (pm *PostgresManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves records from PostgreSQL with basic filtering
-func (pm *PostgresManager) List(ctx context.Context, filters []Filter, model interface{}) error {
+func (pm *PostgresManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
 	db, err := pm.GetDB(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
@@ -294,31 +295,29 @@ func (pm *PostgresManager) List(ctx context.Context, filters []Filter, model int
 	if len(filters) > 0 {
 		for _, filter := range filters {
 			switch filter.Operator {
-			case FilterOpEqual:
+			case base.OpEqual:
 				query = query.Where(filter.Field+" = ?", filter.Value)
-			case FilterOpNotEqual:
+			case base.OpNotEqual:
 				query = query.Where(filter.Field+" != ?", filter.Value)
-			case FilterOpGreaterThan:
+			case base.OpGreaterThan:
 				query = query.Where(filter.Field+" > ?", filter.Value)
-			case FilterOpLessThan:
+			case base.OpLessThan:
 				query = query.Where(filter.Field+" < ?", filter.Value)
-			case FilterOpGreaterEqual:
+			case base.OpGreaterEqual:
 				query = query.Where(filter.Field+" >= ?", filter.Value)
-			case FilterOpLessEqual:
+			case base.OpLessEqual:
 				query = query.Where(filter.Field+" <= ?", filter.Value)
-			case FilterOpIn:
+			case base.OpIn:
 				query = query.Where(filter.Field+" IN ?", filter.Value)
-			case FilterOpNotIn:
+			case base.OpNotIn:
 				query = query.Where(filter.Field+" NOT IN ?", filter.Value)
-			case FilterOpLike:
+			case base.OpLike:
 				query = query.Where(filter.Field+" LIKE ?", filter.Value)
-			case FilterOpILike:
-				query = query.Where(filter.Field+" ILIKE ?", filter.Value)
-			case FilterOpContains:
+			case base.OpContains:
 				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value)+"%")
-			case FilterOpStartsWith:
+			case base.OpStartsWith:
 				query = query.Where(filter.Field+" LIKE ?", fmt.Sprint(filter.Value)+"%")
-			case FilterOpEndsWith:
+			case base.OpEndsWith:
 				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value))
 			default:
 				return fmt.Errorf("unsupported filter operator: %s", filter.Operator)

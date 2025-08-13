@@ -249,7 +249,7 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves records from DynamoDB with basic filtering
-func (dm *DynamoManager) List(ctx context.Context, filters []base.Filter, model interface{}) error {
+func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
 	client := dm.GetClient()
 	if client == nil {
 		return fmt.Errorf("dynamodb client not connected")
@@ -288,19 +288,19 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.Filter, model 
 
 			var expression string
 			switch filter.Operator {
-			case base.FilterOpEqual:
+			case base.OpEqual:
 				expression = fmt.Sprintf("%s = %s", fieldName, valueName)
-			case base.FilterOpNotEqual:
+			case base.OpNotEqual:
 				expression = fmt.Sprintf("%s <> %s", fieldName, valueName)
-			case base.FilterOpGreaterThan:
+			case base.OpGreaterThan:
 				expression = fmt.Sprintf("%s > %s", fieldName, valueName)
-			case base.FilterOpLessThan:
+			case base.OpLessThan:
 				expression = fmt.Sprintf("%s < %s", fieldName, valueName)
-			case base.FilterOpGreaterEqual:
+			case base.OpGreaterEqual:
 				expression = fmt.Sprintf("%s >= %s", fieldName, valueName)
-			case base.FilterOpLessEqual:
+			case base.OpLessEqual:
 				expression = fmt.Sprintf("%s <= %s", fieldName, valueName)
-			case base.FilterOpContains:
+			case base.OpContains:
 				expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
 			default:
 				return fmt.Errorf("unsupported filter operator for DynamoDB: %s", filter.Operator)

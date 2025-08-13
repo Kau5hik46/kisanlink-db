@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -366,7 +367,7 @@ func (sm *S3Manager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves files from S3 with basic filtering
-func (sm *S3Manager) List(ctx context.Context, filters []Filter, model interface{}) error {
+func (sm *S3Manager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
 	if sm.client == nil {
 		return fmt.Errorf("s3 client not connected")
 	}
@@ -380,11 +381,11 @@ func (sm *S3Manager) List(ctx context.Context, filters []Filter, model interface
 	if len(filters) > 0 {
 		for _, filter := range filters {
 			switch filter.Operator {
-			case FilterOpEqual:
+			case base.OpEqual:
 				if filter.Field == "prefix" {
 					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
 				}
-			case FilterOpStartsWith:
+			case base.OpStartsWith:
 				if filter.Field == "prefix" {
 					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
 				}

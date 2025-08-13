@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/authzed/authzed-go/v1"
 	"github.com/sony/gobreaker"
@@ -314,7 +315,7 @@ func (sm *SpiceManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves relationships from SpiceDB based on filters
-func (sm *SpiceManager) List(ctx context.Context, filters []Filter, model interface{}) error {
+func (sm *SpiceManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
 	client := sm.GetClient()
 	if client == nil {
 		return fmt.Errorf("spicedb client not connected")

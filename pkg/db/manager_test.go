@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -58,37 +59,37 @@ func TestFilterOperations(t *testing.T) {
 	tests := []struct {
 		name     string
 		field    string
-		operator FilterOperator
+		operator base.FilterOperator
 		value    interface{}
-		expected Filter
+		expected base.FilterCondition
 	}{
 		{
 			name:     "Equal filter",
 			field:    "name",
-			operator: FilterOpEqual,
+			operator: base.OpEqual,
 			value:    "test",
-			expected: Filter{Field: "name", Operator: FilterOpEqual, Value: "test"},
+			expected: base.FilterCondition{Field: "name", Operator: base.OpEqual, Value: "test"},
 		},
 		{
 			name:     "Greater than filter",
 			field:    "age",
-			operator: FilterOpGreaterThan,
+			operator: base.OpGreaterThan,
 			value:    18,
-			expected: Filter{Field: "age", Operator: FilterOpGreaterThan, Value: 18},
+			expected: base.FilterCondition{Field: "age", Operator: base.OpGreaterThan, Value: 18},
 		},
 		{
 			name:     "Contains filter",
 			field:    "email",
-			operator: FilterOpContains,
+			operator: base.OpContains,
 			value:    "@example.com",
-			expected: Filter{Field: "email", Operator: FilterOpContains, Value: "@example.com"},
+			expected: base.FilterCondition{Field: "email", Operator: base.OpContains, Value: "@example.com"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test filter creation directly
-			filter := Filter{
+			filter := base.FilterCondition{
 				Field:    tt.field,
 				Operator: tt.operator,
 				Value:    tt.value,
@@ -189,9 +190,9 @@ func TestPostgresManagerCRUD(t *testing.T) {
 
 	// Test List with filters
 	var models []TestModel
-	filters := []Filter{
-		{Field: "active", Operator: FilterOpEqual, Value: true},
-		{Field: "age", Operator: FilterOpGreaterThan, Value: 20},
+	filters := []base.FilterCondition{
+		{Field: "active", Operator: base.OpEqual, Value: true},
+		{Field: "age", Operator: base.OpGreaterThan, Value: 20},
 	}
 
 	err = manager.List(ctx, filters, &models)
@@ -294,8 +295,8 @@ func TestDynamoManagerCRUD(t *testing.T) {
 
 	// Test List with filters
 	var models []TestModel
-	filters := []Filter{
-		{Field: "active", Operator: FilterOpEqual, Value: true},
+	filters := []base.FilterCondition{
+		{Field: "active", Operator: base.OpEqual, Value: true},
 	}
 
 	err = manager.List(ctx, filters, &models)
@@ -379,26 +380,25 @@ func TestDatabaseManagerInterface(t *testing.T) {
 
 // TestFilterOperators tests all filter operators
 func TestFilterOperators(t *testing.T) {
-	operators := []FilterOperator{
-		FilterOpEqual,
-		FilterOpNotEqual,
-		FilterOpGreaterThan,
-		FilterOpLessThan,
-		FilterOpGreaterEqual,
-		FilterOpLessEqual,
-		FilterOpIn,
-		FilterOpNotIn,
-		FilterOpLike,
-		FilterOpILike,
-		FilterOpContains,
-		FilterOpStartsWith,
-		FilterOpEndsWith,
+	operators := []base.FilterOperator{
+		base.OpEqual,
+		base.OpNotEqual,
+		base.OpGreaterThan,
+		base.OpLessThan,
+		base.OpGreaterEqual,
+		base.OpLessEqual,
+		base.OpIn,
+		base.OpNotIn,
+		base.OpLike,
+		base.OpContains,
+		base.OpStartsWith,
+		base.OpEndsWith,
 	}
 
 	// Test that all operators are valid
 	for _, op := range operators {
 		t.Run(string(op), func(t *testing.T) {
-			filter := Filter{
+			filter := base.FilterCondition{
 				Field:    "test_field",
 				Operator: op,
 				Value:    "test_value",
@@ -415,48 +415,48 @@ func TestDatabaseManagerFilterIntegration(t *testing.T) {
 	tests := []struct {
 		name     string
 		manager  DBManager
-		filters  []Filter
+		filters  []base.FilterCondition
 		expected bool // whether we expect the operation to succeed
 	}{
 		{
 			name:     "PostgreSQL with empty filters",
 			manager:  &PostgresManager{},
-			filters:  []Filter{},
+			filters:  []base.FilterCondition{},
 			expected: true,
 		},
 		{
 			name:    "PostgreSQL with equal filter",
 			manager: &PostgresManager{},
-			filters: []Filter{
-				{Field: "name", Operator: FilterOpEqual, Value: "test"},
+			filters: []base.FilterCondition{
+				{Field: "name", Operator: base.OpEqual, Value: "test"},
 			},
 			expected: true,
 		},
 		{
 			name:     "DynamoDB with empty filters",
 			manager:  &DynamoManager{},
-			filters:  []Filter{},
+			filters:  []base.FilterCondition{},
 			expected: true,
 		},
 		{
 			name:    "DynamoDB with equal filter",
 			manager: &DynamoManager{},
-			filters: []Filter{
-				{Field: "name", Operator: FilterOpEqual, Value: "test"},
+			filters: []base.FilterCondition{
+				{Field: "name", Operator: base.OpEqual, Value: "test"},
 			},
 			expected: true,
 		},
 		{
 			name:     "S3 with empty filters",
 			manager:  &S3Manager{},
-			filters:  []Filter{},
+			filters:  []base.FilterCondition{},
 			expected: true,
 		},
 		{
 			name:    "S3 with prefix filter",
 			manager: &S3Manager{},
-			filters: []Filter{
-				{Field: "prefix", Operator: FilterOpEqual, Value: "test/"},
+			filters: []base.FilterCondition{
+				{Field: "prefix", Operator: base.OpEqual, Value: "test/"},
 			},
 			expected: true,
 		},
@@ -477,57 +477,57 @@ func TestDatabaseManagerFilterIntegration(t *testing.T) {
 func TestFilterValidation(t *testing.T) {
 	tests := []struct {
 		name        string
-		filter      Filter
+		filter      base.FilterCondition
 		shouldValid bool
 	}{
 		{
 			name: "Valid equal filter",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "name",
-				Operator: FilterOpEqual,
+				Operator: base.OpEqual,
 				Value:    "test",
 			},
 			shouldValid: true,
 		},
 		{
 			name: "Valid greater than filter",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "age",
-				Operator: FilterOpGreaterThan,
+				Operator: base.OpGreaterThan,
 				Value:    25,
 			},
 			shouldValid: true,
 		},
 		{
 			name: "Valid contains filter",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "email",
-				Operator: FilterOpContains,
+				Operator: base.OpContains,
 				Value:    "@example.com",
 			},
 			shouldValid: true,
 		},
 		{
 			name: "Valid IN filter",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "status",
-				Operator: FilterOpIn,
+				Operator: base.OpIn,
 				Value:    []string{"active", "pending"},
 			},
 			shouldValid: true,
 		},
 		{
 			name: "Empty field name",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "",
-				Operator: FilterOpEqual,
+				Operator: base.OpEqual,
 				Value:    "test",
 			},
 			shouldValid: false,
 		},
 		{
 			name: "Invalid operator",
-			filter: Filter{
+			filter: base.FilterCondition{
 				Field:    "name",
 				Operator: "invalid",
 				Value:    "test",
@@ -551,21 +551,21 @@ func TestFilterValidation(t *testing.T) {
 }
 
 // isValidOperator checks if an operator is valid
-func isValidOperator(op FilterOperator) bool {
-	validOperators := []FilterOperator{
-		FilterOpEqual,
-		FilterOpNotEqual,
-		FilterOpGreaterThan,
-		FilterOpLessThan,
-		FilterOpGreaterEqual,
-		FilterOpLessEqual,
-		FilterOpIn,
-		FilterOpNotIn,
-		FilterOpLike,
-		FilterOpILike,
-		FilterOpContains,
-		FilterOpStartsWith,
-		FilterOpEndsWith,
+func isValidOperator(op base.FilterOperator) bool {
+	validOperators := []base.FilterOperator{
+		base.OpEqual,
+		base.OpNotEqual,
+		base.OpGreaterThan,
+		base.OpLessThan,
+		base.OpGreaterEqual,
+		base.OpLessEqual,
+		base.OpIn,
+		base.OpNotIn,
+		base.OpLike,
+		base.OpLike,
+		base.OpContains,
+		base.OpStartsWith,
+		base.OpEndsWith,
 	}
 
 	for _, validOp := range validOperators {
@@ -623,8 +623,8 @@ func BenchmarkCRUDOperations(b *testing.B) {
 	b.Run("List", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			var models []TestModel
-			filters := []Filter{
-				{Field: "active", Operator: FilterOpEqual, Value: true},
+			filters := []base.FilterCondition{
+				{Field: "active", Operator: base.OpEqual, Value: true},
 			}
 			manager.List(ctx, filters, &models)
 		}
