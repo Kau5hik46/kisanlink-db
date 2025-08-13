@@ -49,32 +49,6 @@ type DBManager interface {
 	AutoMigrateModels(ctx context.Context, models ...interface{}) error
 }
 
-// Filter represents a database filter
-type Filter struct {
-	Field    string         `json:"field"`
-	Operator FilterOperator `json:"operator"`
-	Value    interface{}    `json:"value"`
-}
-
-// FilterOperator represents the type of filter operation
-type FilterOperator string
-
-const (
-	FilterOpEqual        FilterOperator = "eq"
-	FilterOpNotEqual     FilterOperator = "ne"
-	FilterOpGreaterThan  FilterOperator = "gt"
-	FilterOpLessThan     FilterOperator = "lt"
-	FilterOpGreaterEqual FilterOperator = "gte"
-	FilterOpLessEqual    FilterOperator = "lte"
-	FilterOpIn           FilterOperator = "in"
-	FilterOpNotIn        FilterOperator = "nin"
-	FilterOpLike         FilterOperator = "like"
-	FilterOpILike        FilterOperator = "ilike"
-	FilterOpContains     FilterOperator = "contains"
-	FilterOpStartsWith   FilterOperator = "starts_with"
-	FilterOpEndsWith     FilterOperator = "ends_with"
-)
-
 // DatabaseManager manages connections to different database backends
 type DatabaseManager struct {
 	mu sync.RWMutex

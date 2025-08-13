@@ -583,6 +583,7 @@ type FilterableRepository[T ModelInterface] interface {
 type BaseFilterableRepository[T ModelInterface] struct {
 	*BaseRepository[T]
 	evaluator *FilterEvaluator
+	dbManager interface{} // Will hold db.DBManager - using interface{} to avoid circular imports
 }
 
 // NewBaseFilterableRepository creates a new base filterable repository
@@ -590,7 +591,61 @@ func NewBaseFilterableRepository[T ModelInterface]() *BaseFilterableRepository[T
 	return &BaseFilterableRepository[T]{
 		BaseRepository: NewBaseRepository[T](),
 		evaluator:      NewFilterEvaluator(),
+		dbManager:      nil,
 	}
+}
+
+// SetDBManager sets the database manager for this repository
+func (r *BaseFilterableRepository[T]) SetDBManager(dbManager interface{}) {
+	r.dbManager = dbManager
+}
+
+// Create overrides BaseRepository.Create to use database manager if available
+func (r *BaseFilterableRepository[T]) Create(ctx context.Context, model T) error {
+	if r.dbManager != nil {
+		// Use database manager interface
+		if dbMgr, ok := r.dbManager.(interface {
+			Create(ctx context.Context, model interface{}) error
+		}); ok {
+			return dbMgr.Create(ctx, model)
+		}
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.Create(ctx, model)
+}
+
+// Update overrides BaseRepository.Update to use database manager if available
+func (r *BaseFilterableRepository[T]) Update(ctx context.Context, model T) error {
+	if r.dbManager != nil {
+		// Use database manager interface
+		if dbMgr, ok := r.dbManager.(interface {
+			Update(ctx context.Context, model interface{}) error
+		}); ok {
+			return dbMgr.Update(ctx, model)
+		}
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.Update(ctx, model)
+}
+
+// GetByID overrides BaseRepository.GetByID to use database manager if available
+func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string) (T, error) {
+	if r.dbManager != nil {
+		// Use database manager interface
+		if dbMgr, ok := r.dbManager.(interface {
+			GetByID(ctx context.Context, id interface{}, model interface{}) error
+		}); ok {
+			var model T
+			err := dbMgr.GetByID(ctx, id, &model)
+			if err != nil {
+				var zero T
+				return zero, err
+			}
+			return model, nil
+		}
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.GetByID(ctx, id)
 }
 
 // Find implements FilterableRepository.Find
