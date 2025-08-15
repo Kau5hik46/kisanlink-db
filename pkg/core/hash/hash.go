@@ -80,13 +80,21 @@ func (g *IDGenerator) InitializeCountersFromDatabaseWithSize(tableIdentifier str
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	fmt.Printf("DEBUG: Initializing counters for table %s with %d existing IDs\n", tableIdentifier, len(existingIDs))
+
 	if len(existingIDs) == 0 {
+		fmt.Printf("DEBUG: No existing IDs found for table %s\n", tableIdentifier)
 		return
 	}
 
 	// Find the highest numeric part from existing IDs
 	maxCounter := int64(0)
-	prefix := tableIdentifier[:4] // Ensure we only look at the first 4 characters
+
+	// Safely get prefix - handle any length table identifier
+	prefix := tableIdentifier
+	if len(tableIdentifier) >= 4 {
+		prefix = tableIdentifier[:4]
+	}
 
 	// Create regex pattern based on table size
 	var pattern string
@@ -105,21 +113,33 @@ func (g *IDGenerator) InitializeCountersFromDatabaseWithSize(tableIdentifier str
 		pattern = fmt.Sprintf("^%s(\\d{8})$", prefix) // Default to medium
 	}
 
+	fmt.Printf("DEBUG: Using pattern %s for table %s\n", pattern, tableIdentifier)
+
 	regex := regexp.MustCompile(pattern)
 
 	for _, id := range existingIDs {
-		if matches := regex.FindStringSubmatch(id); len(matches) == 2 {
-			if counter, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+		fmt.Printf("DEBUG: Checking ID: %s\n", id)
+		matches := regex.FindStringSubmatch(id)
+		if len(matches) == 2 {
+			numericPart := matches[1]
+			if counter, err := strconv.ParseInt(numericPart, 10, 64); err == nil {
+				fmt.Printf("DEBUG: ID %s matches pattern, numeric part: %s\n", id, numericPart)
+				fmt.Printf("DEBUG: Parsed counter value: %d\n", counter)
 				if counter > maxCounter {
 					maxCounter = counter
+					fmt.Printf("DEBUG: New max counter: %d\n", maxCounter)
 				}
 			}
+		} else {
+			fmt.Printf("DEBUG: ID %s does not match pattern\n", id)
 		}
 	}
 
-	// Set the counter to the highest value found + 1
 	if maxCounter > 0 {
 		g.counters[tableIdentifier] = maxCounter
+		fmt.Printf("DEBUG: Set counter for table %s to %d\n", tableIdentifier, maxCounter)
+	} else {
+		fmt.Printf("DEBUG: No valid counter found for table %s\n", tableIdentifier)
 	}
 }
 
@@ -175,6 +195,8 @@ func (g *IDGenerator) generateIncrementalID(tableIdentifier string, size TableSi
 	g.counters[tableIdentifier]++
 	counter := g.counters[tableIdentifier]
 
+	fmt.Printf("DEBUG: Generating ID for table %s, counter: %d\n", tableIdentifier, counter)
+
 	var format string
 	switch size {
 	case Tiny:
@@ -191,7 +213,9 @@ func (g *IDGenerator) generateIncrementalID(tableIdentifier string, size TableSi
 		format = "%08d" // Default to medium
 	}
 
-	return fmt.Sprintf(format, counter)
+	result := fmt.Sprintf(format, counter)
+	fmt.Printf("DEBUG: Generated ID: %s for table %s\n", result, tableIdentifier)
+	return result
 }
 
 // generateTimestampID generates a timestamp-based numeric ID
