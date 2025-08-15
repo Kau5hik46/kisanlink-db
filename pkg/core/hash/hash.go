@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -41,6 +43,86 @@ func NewIDGenerator() *IDGenerator {
 	}
 }
 
+// InitializeCountersFromDatabase initializes the counters from existing database records
+// This prevents duplicate key violations when the service restarts
+func (g *IDGenerator) InitializeCountersFromDatabase(tableIdentifier string, existingIDs []string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if len(existingIDs) == 0 {
+		return
+	}
+
+	// Find the highest numeric part from existing IDs
+	maxCounter := int64(0)
+	prefix := tableIdentifier[:4] // Ensure we only look at the first 4 characters
+
+	for _, id := range existingIDs {
+		if len(id) >= 4 && id[:4] == prefix {
+			// Extract numeric part after the prefix
+			numericPart := id[4:]
+			if counter, err := strconv.ParseInt(numericPart, 10, 64); err == nil {
+				if counter > maxCounter {
+					maxCounter = counter
+				}
+			}
+		}
+	}
+
+	// Set the counter to the highest value found + 1
+	if maxCounter > 0 {
+		g.counters[tableIdentifier] = maxCounter
+	}
+}
+
+// InitializeCountersFromDatabaseWithSize initializes counters considering the table size
+func (g *IDGenerator) InitializeCountersFromDatabaseWithSize(tableIdentifier string, existingIDs []string, size TableSize) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if len(existingIDs) == 0 {
+		return
+	}
+
+	// Find the highest numeric part from existing IDs
+	maxCounter := int64(0)
+	prefix := tableIdentifier[:4] // Ensure we only look at the first 4 characters
+
+	// Create regex pattern based on table size
+	var pattern string
+	switch size {
+	case Tiny:
+		pattern = fmt.Sprintf("^%s(\\d{4})$", prefix)
+	case Small:
+		pattern = fmt.Sprintf("^%s(\\d{6})$", prefix)
+	case Medium:
+		pattern = fmt.Sprintf("^%s(\\d{8})$", prefix)
+	case Large:
+		pattern = fmt.Sprintf("^%s(\\d{10})$", prefix)
+	case XLarge:
+		pattern = fmt.Sprintf("^%s(\\d{12})$", prefix)
+	default:
+		pattern = fmt.Sprintf("^%s(\\d{8})$", prefix) // Default to medium
+	}
+
+	regex := regexp.MustCompile(pattern)
+
+	for _, id := range existingIDs {
+		if matches := regex.FindStringSubmatch(id); len(matches) == 2 {
+			if counter, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+				if counter > maxCounter {
+					maxCounter = counter
+				}
+			}
+		}
+	}
+
+	// Set the counter to the highest value found + 1
+	if maxCounter > 0 {
+		g.counters[tableIdentifier] = maxCounter
+	}
+}
+
 // GenerateRandomID generates a unique ID for a model based on table identifier and size
 func GenerateRandomID(tableIdentifier string, size TableSize) (string, error) {
 	return globalGenerator.GenerateID(tableIdentifier, size, "incremental")
@@ -49,6 +131,11 @@ func GenerateRandomID(tableIdentifier string, size TableSize) (string, error) {
 // GenerateRandomIDWithPattern generates a unique ID with a specific pattern
 func GenerateRandomIDWithPattern(tableIdentifier string, size TableSize, pattern string) (string, error) {
 	return globalGenerator.GenerateID(tableIdentifier, size, pattern)
+}
+
+// InitializeGlobalCountersFromDatabase initializes the global generator's counters from database
+func InitializeGlobalCountersFromDatabase(tableIdentifier string, existingIDs []string, size TableSize) {
+	globalGenerator.InitializeCountersFromDatabaseWithSize(tableIdentifier, existingIDs, size)
 }
 
 // GenerateID generates a unique ID based on table identifier, size, and pattern
