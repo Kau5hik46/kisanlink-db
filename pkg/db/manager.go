@@ -44,7 +44,12 @@ type DBManager interface {
 	GetByID(ctx context.Context, id interface{}, model interface{}) error
 	Update(ctx context.Context, model interface{}) error
 	Delete(ctx context.Context, id interface{}) error
-	List(ctx context.Context, filters []base.FilterCondition, model interface{}) error
+
+	// Enhanced List method that uses the unified Filter structure with pagination
+	List(ctx context.Context, filter *base.Filter, model interface{}) error
+
+	// Count method with filter support
+	Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error)
 
 	// Migration Operations
 	AutoMigrateModels(ctx context.Context, models ...interface{}) error
@@ -212,8 +217,8 @@ func (dm *DatabaseManager) GetManager(backend BackendType) DBManager {
 		return dm.dynamoManager
 	case BackendSpiceDB:
 		return dm.spiceManager
-	case BackendS3:
-		return dm.s3Manager
+	// case BackendS3:
+	// 	return dm.s3Manager
 	case BackendInMemory:
 		return nil // In-memory doesn't have a manager yet
 	default:
@@ -236,9 +241,9 @@ func (dm *DatabaseManager) GetAllManagers() []DBManager {
 	if dm.spiceManager != nil {
 		managers = append(managers, dm.spiceManager)
 	}
-	if dm.s3Manager != nil {
-		managers = append(managers, dm.s3Manager)
-	}
+	// if dm.s3Manager != nil {
+	// 	managers = append(managers, dm.s3Manager)
+	// }
 	return managers
 }
 

@@ -261,7 +261,9 @@ func (pm *PostgresManager) GetByID(ctx context.Context, id interface{}, model in
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
 	}
-	return db.WithContext(ctx).First(model, id).Error
+
+	// Use Where clause to be more explicit about the ID condition
+	return db.WithContext(ctx).Where("id = ?", id).First(model).Error
 }
 
 // Update updates an existing record
@@ -282,50 +284,201 @@ func (pm *PostgresManager) Delete(ctx context.Context, id interface{}) error {
 	return db.WithContext(ctx).Delete("", id).Error
 }
 
-// List retrieves records from PostgreSQL with basic filtering
-func (pm *PostgresManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
+// List retrieves records from PostgreSQL with filter support including pagination and sorting
+func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	db, err := pm.GetDB(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
 	}
 
-	query := db.WithContext(ctx)
+	// Set the model/table context for GORM
+	query := db.WithContext(ctx).Model(model)
 
-	// Apply basic filters if provided
-	if len(filters) > 0 {
-		for _, filter := range filters {
-			switch filter.Operator {
-			case base.OpEqual:
-				query = query.Where(filter.Field+" = ?", filter.Value)
-			case base.OpNotEqual:
-				query = query.Where(filter.Field+" != ?", filter.Value)
-			case base.OpGreaterThan:
-				query = query.Where(filter.Field+" > ?", filter.Value)
-			case base.OpLessThan:
-				query = query.Where(filter.Field+" < ?", filter.Value)
-			case base.OpGreaterEqual:
-				query = query.Where(filter.Field+" >= ?", filter.Value)
-			case base.OpLessEqual:
-				query = query.Where(filter.Field+" <= ?", filter.Value)
-			case base.OpIn:
-				query = query.Where(filter.Field+" IN ?", filter.Value)
-			case base.OpNotIn:
-				query = query.Where(filter.Field+" NOT IN ?", filter.Value)
-			case base.OpLike:
-				query = query.Where(filter.Field+" LIKE ?", filter.Value)
-			case base.OpContains:
-				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value)+"%")
-			case base.OpStartsWith:
-				query = query.Where(filter.Field+" LIKE ?", fmt.Sprint(filter.Value)+"%")
-			case base.OpEndsWith:
-				query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value))
-			default:
-				return fmt.Errorf("unsupported filter operator: %s", filter.Operator)
+	// Apply filter conditions if provided
+	if filter != nil {
+		pm.applyFilterGroup(query, &filter.Group)
+	}
+
+	// Apply sorting if provided
+	if filter != nil && len(filter.Sort) > 0 {
+		for _, sort := range filter.Sort {
+			direction := "ASC"
+			if sort.Direction == "desc" || sort.Direction == "DESC" {
+				direction = "DESC"
 			}
+			query = query.Order(fmt.Sprintf("%s %s", sort.Field, direction))
+		}
+	}
+
+	// Apply pagination if provided
+	if filter != nil {
+		if filter.Limit > 0 {
+			query = query.Limit(filter.Limit)
+		}
+		if filter.Offset > 0 {
+			query = query.Offset(filter.Offset)
+		}
+		// Alternative pagination using Page/PageSize
+		if filter.Page > 0 && filter.PageSize > 0 {
+			offset := (filter.Page - 1) * filter.PageSize
+			query = query.Limit(filter.PageSize).Offset(offset)
 		}
 	}
 
 	return query.Find(model).Error
+}
+
+// applyFilterGroup recursively applies filter groups with proper OR/AND logic
+func (pm *PostgresManager) applyFilterGroup(query *gorm.DB, group *base.FilterGroup) {
+	if group == nil || (len(group.Conditions) == 0 && len(group.Groups) == 0) {
+		return
+	}
+
+	// Handle main group conditions
+	if len(group.Conditions) > 0 {
+		if group.Logic == base.LogicOr {
+			// For OR logic, use GORM's native OR support
+			// Start with the first condition
+			if len(group.Conditions) > 0 {
+				firstCondition := group.Conditions[0]
+				if err := pm.applyFilterCondition(query, firstCondition); err != nil {
+					pm.logger.Error("failed to apply first filter condition", zap.Error(err))
+				}
+
+				// Add subsequent conditions with OR
+				for i := 1; i < len(group.Conditions); i++ {
+					condition := group.Conditions[i]
+					query = query.Or(pm.buildGormCondition(condition))
+				}
+			}
+		} else {
+			// For AND logic (default), apply conditions normally
+			for _, condition := range group.Conditions {
+				if err := pm.applyFilterCondition(query, condition); err != nil {
+					pm.logger.Error("failed to apply filter condition", zap.Error(err))
+					continue
+				}
+			}
+		}
+	}
+
+	// Handle sub-groups recursively
+	if len(group.Groups) > 0 {
+		if group.Logic == base.LogicOr {
+			// For OR logic with sub-groups, we need to handle this carefully
+			// Since we can't easily combine complex nested OR groups, we'll process them as AND for now
+			// This is a limitation of the current approach - we'd need a more sophisticated query builder
+			for _, subGroup := range group.Groups {
+				pm.applyFilterGroup(query, &subGroup)
+			}
+		} else {
+			// For AND logic with sub-groups, apply them normally
+			for _, subGroup := range group.Groups {
+				pm.applyFilterGroup(query, &subGroup)
+			}
+		}
+	}
+}
+
+// buildGormCondition builds a GORM condition for OR clauses
+func (pm *PostgresManager) buildGormCondition(condition base.FilterCondition) *gorm.DB {
+	// Create a new GORM DB instance just for building the condition
+	// This is a bit of a hack, but it's the cleanest way to build OR conditions
+	db, err := pm.GetDB(context.Background(), true)
+	if err != nil {
+		pm.logger.Error("failed to get DB for building condition", zap.Error(err))
+		return db
+	}
+
+	switch condition.Operator {
+	case base.OpEqual:
+		return db.Where(condition.Field+" = ?", condition.Value)
+	case base.OpNotEqual:
+		return db.Where(condition.Field+" != ?", condition.Value)
+	case base.OpGreaterThan:
+		return db.Where(condition.Field+" > ?", condition.Value)
+	case base.OpLessThan:
+		return db.Where(condition.Field+" < ?", condition.Value)
+	case base.OpGreaterEqual:
+		return db.Where(condition.Field+" >= ?", condition.Value)
+	case base.OpLessEqual:
+		return db.Where(condition.Field+" <= ?", condition.Value)
+	case base.OpIn:
+		return db.Where(condition.Field+" IN ?", condition.Value)
+	case base.OpNotIn:
+		return db.Where(condition.Field+" NOT IN ?", condition.Value)
+	case base.OpLike:
+		return db.Where(condition.Field+" LIKE ?", condition.Value)
+	case base.OpContains:
+		return db.Where(condition.Field+" LIKE ?", fmt.Sprintf("%%%v%%", condition.Value))
+	case base.OpStartsWith:
+		return db.Where(condition.Field+" LIKE ?", fmt.Sprintf("%v%%", condition.Value))
+	case base.OpEndsWith:
+		return db.Where(condition.Field+" LIKE ?", fmt.Sprintf("%%%v", condition.Value))
+	case base.OpIsNull:
+		return db.Where(condition.Field + " IS NULL")
+	case base.OpIsNotNull:
+		return db.Where(condition.Field + " IS NOT NULL")
+	default:
+		pm.logger.Error("unsupported filter operator", zap.String("operator", string(condition.Operator)))
+		return db
+	}
+}
+
+// Count counts records in PostgreSQL with filter support
+func (pm *PostgresManager) Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error) {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	// Set the model/table context for GORM
+	query := db.WithContext(ctx).Model(model)
+
+	// Apply filter conditions if provided
+	if filter != nil {
+		pm.applyFilterGroup(query, &filter.Group)
+	}
+
+	var count int64
+	return count, query.Count(&count).Error
+}
+
+// applyFilterCondition applies a single filter condition to the query
+func (pm *PostgresManager) applyFilterCondition(query *gorm.DB, filter base.FilterCondition) error {
+	switch filter.Operator {
+	case base.OpEqual:
+		query = query.Where(filter.Field+" = ?", filter.Value)
+	case base.OpNotEqual:
+		query = query.Where(filter.Field+" != ?", filter.Value)
+	case base.OpGreaterThan:
+		query = query.Where(filter.Field+" > ?", filter.Value)
+	case base.OpLessThan:
+		query = query.Where(filter.Field+" < ?", filter.Value)
+	case base.OpGreaterEqual:
+		query = query.Where(filter.Field+" >= ?", filter.Value)
+	case base.OpLessEqual:
+		query = query.Where(filter.Field+" <= ?", filter.Value)
+	case base.OpIn:
+		query = query.Where(filter.Field+" IN ?", filter.Value)
+	case base.OpNotIn:
+		query = query.Where(filter.Field+" NOT IN ?", filter.Value)
+	case base.OpLike:
+		query = query.Where(filter.Field+" LIKE ?", filter.Value)
+	case base.OpContains:
+		query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value)+"%")
+	case base.OpStartsWith:
+		query = query.Where(filter.Field+" LIKE ?", fmt.Sprint(filter.Value)+"%")
+	case base.OpEndsWith:
+		query = query.Where(filter.Field+" LIKE ?", "%"+fmt.Sprint(filter.Value))
+	case base.OpIsNull:
+		query = query.Where(filter.Field + " IS NULL")
+	case base.OpIsNotNull:
+		query = query.Where(filter.Field + " IS NOT NULL")
+	default:
+		return fmt.Errorf("unsupported filter operator: %s", filter.Operator)
+	}
+	return nil
 }
 
 // AutoMigrateModels runs automigration for specific models

@@ -248,8 +248,8 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 	return err
 }
 
-// List retrieves records from DynamoDB with basic filtering
-func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
+// List retrieves records from DynamoDB with filter support including pagination
+func (dm *DynamoManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	client := dm.GetClient()
 	if client == nil {
 		return fmt.Errorf("dynamodb client not connected")
@@ -260,13 +260,13 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterConditio
 		TableName: aws.String(dm.config.DynamoDBTable),
 	}
 
-	// Apply basic filters if provided
-	if len(filters) > 0 {
+	// Apply filter conditions if provided
+	if filter != nil && len(filter.Group.Conditions) > 0 {
 		var filterExpressions []string
 		var expressionAttributeNames map[string]string
 		var expressionAttributeValues map[string]types.AttributeValue
 
-		for i, filter := range filters {
+		for i, condition := range filter.Group.Conditions {
 			fieldName := fmt.Sprintf("#field%d", i)
 			valueName := fmt.Sprintf(":value%d", i)
 
@@ -277,17 +277,17 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterConditio
 				expressionAttributeValues = make(map[string]types.AttributeValue)
 			}
 
-			expressionAttributeNames[fieldName] = filter.Field
+			expressionAttributeNames[fieldName] = condition.Field
 
 			// Convert value to DynamoDB attribute value
-			attrValue, err := dm.valueToAttributeValue(filter.Value)
+			attrValue, err := dm.valueToAttributeValue(condition.Value)
 			if err != nil {
 				return fmt.Errorf("failed to convert value: %w", err)
 			}
 			expressionAttributeValues[valueName] = attrValue
 
 			var expression string
-			switch filter.Operator {
+			switch condition.Operator {
 			case base.OpEqual:
 				expression = fmt.Sprintf("%s = %s", fieldName, valueName)
 			case base.OpNotEqual:
@@ -303,7 +303,7 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterConditio
 			case base.OpContains:
 				expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
 			default:
-				return fmt.Errorf("unsupported filter operator for DynamoDB: %s", filter.Operator)
+				return fmt.Errorf("unsupported filter operator for DynamoDB: %s", condition.Operator)
 			}
 
 			filterExpressions = append(filterExpressions, expression)
@@ -314,6 +314,11 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterConditio
 			scanInput.ExpressionAttributeNames = expressionAttributeNames
 			scanInput.ExpressionAttributeValues = expressionAttributeValues
 		}
+	}
+
+	// Apply pagination if provided
+	if filter != nil && filter.Limit > 0 {
+		scanInput.Limit = aws.Int32(int32(filter.Limit))
 	}
 
 	result, err := client.Scan(ctx, scanInput)
@@ -332,6 +337,83 @@ func (dm *DynamoManager) List(ctx context.Context, filters []base.FilterConditio
 	}
 
 	return nil
+}
+
+// Count counts records in DynamoDB with filter support
+func (dm *DynamoManager) Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error) {
+	client := dm.GetClient()
+	if client == nil {
+		return 0, fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll do a scan with filter expressions and count
+	scanInput := &dynamodb.ScanInput{
+		TableName: aws.String(dm.config.DynamoDBTable),
+		Select:    types.SelectCount,
+	}
+
+	// Apply filter conditions if provided (same logic as List)
+	if filter != nil && len(filter.Group.Conditions) > 0 {
+		var filterExpressions []string
+		var expressionAttributeNames map[string]string
+		var expressionAttributeValues map[string]types.AttributeValue
+
+		for i, condition := range filter.Group.Conditions {
+			fieldName := fmt.Sprintf("#field%d", i)
+			valueName := fmt.Sprintf(":value%d", i)
+
+			if expressionAttributeNames == nil {
+				expressionAttributeNames = make(map[string]string)
+			}
+			if expressionAttributeValues == nil {
+				expressionAttributeValues = make(map[string]types.AttributeValue)
+			}
+
+			expressionAttributeNames[fieldName] = condition.Field
+
+			// Convert value to DynamoDB attribute value
+			attrValue, err := dm.valueToAttributeValue(condition.Value)
+			if err != nil {
+				return 0, fmt.Errorf("failed to convert value: %w", err)
+			}
+			expressionAttributeValues[valueName] = attrValue
+
+			var expression string
+			switch condition.Operator {
+			case base.OpEqual:
+				expression = fmt.Sprintf("%s = %s", fieldName, valueName)
+			case base.OpNotEqual:
+				expression = fmt.Sprintf("%s <> %s", fieldName, valueName)
+			case base.OpGreaterThan:
+				expression = fmt.Sprintf("%s > %s", fieldName, valueName)
+			case base.OpLessThan:
+				expression = fmt.Sprintf("%s < %s", fieldName, valueName)
+			case base.OpGreaterEqual:
+				expression = fmt.Sprintf("%s >= %s", fieldName, valueName)
+			case base.OpLessEqual:
+				expression = fmt.Sprintf("%s <= %s", fieldName, valueName)
+			case base.OpContains:
+				expression = fmt.Sprintf("contains(%s, %s)", fieldName, valueName)
+			default:
+				return 0, fmt.Errorf("unsupported filter operator for DynamoDB: %s", condition.Operator)
+			}
+
+			filterExpressions = append(filterExpressions, expression)
+		}
+
+		if len(filterExpressions) > 0 {
+			scanInput.FilterExpression = aws.String(strings.Join(filterExpressions, " AND "))
+			scanInput.ExpressionAttributeNames = expressionAttributeNames
+			scanInput.ExpressionAttributeValues = expressionAttributeValues
+		}
+	}
+
+	result, err := client.Scan(ctx, scanInput)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count objects: %w", err)
+	}
+
+	return int64(result.Count), nil
 }
 
 // AutoMigrateModels runs automigration for specific models (DynamoDB doesn't support schema migration)

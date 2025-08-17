@@ -80,12 +80,17 @@ func ExampleCRUD() {
 
 	// Example 4: List users with filters
 	var users []ExampleUser
-	filters := []base.FilterCondition{
-		{Field: "active", Operator: base.OpEqual, Value: true},
-		{Field: "age", Operator: base.OpGreaterThan, Value: 25},
+	listFilter := &base.Filter{
+		Group: base.FilterGroup{
+			Conditions: []base.FilterCondition{
+				{Field: "active", Operator: base.OpEqual, Value: true},
+				{Field: "age", Operator: base.OpGreaterThan, Value: 25},
+			},
+			Logic: base.LogicAnd,
+		},
 	}
 
-	if err := postgresManager.List(ctx, filters, &users); err != nil {
+	if err := postgresManager.List(ctx, listFilter, &users); err != nil {
 		log.Printf("Failed to list users: %v", err)
 	} else {
 		fmt.Printf("Found %d active users over 25\n", len(users))
@@ -142,11 +147,16 @@ func ExampleDynamoDBCRUD() {
 
 	// List users with filters
 	var users []ExampleUser
-	filters := []base.FilterCondition{
-		{Field: "active", Operator: base.OpEqual, Value: true},
+	dynamoFilter := &base.Filter{
+		Group: base.FilterGroup{
+			Conditions: []base.FilterCondition{
+				{Field: "active", Operator: base.OpEqual, Value: true},
+			},
+			Logic: base.LogicAnd,
+		},
 	}
 
-	if err := dynamoManager.List(ctx, filters, &users); err != nil {
+	if err := dynamoManager.List(ctx, dynamoFilter, &users); err != nil {
 		log.Printf("Failed to list users from DynamoDB: %v", err)
 	} else {
 		fmt.Printf("Found %d active users in DynamoDB\n", len(users))
@@ -177,40 +187,29 @@ func ExampleFilterOperations() {
 		log.Fatal("PostgreSQL manager not available")
 	}
 
-	// Example 1: Equal filter
-	equalFilter := base.FilterCondition{Field: "email", Operator: base.OpEqual, Value: "john@example.com"}
-
-	// Example 2: Greater than filter
-	ageFilter := base.FilterCondition{Field: "age", Operator: base.OpGreaterThan, Value: 25}
-
-	// Example 3: Contains filter
-	containsFilter := base.FilterCondition{Field: "name", Operator: base.OpContains, Value: "John"}
-
-	// Example 4: IN filter
-	inFilter := base.FilterCondition{Field: "status", Operator: base.OpIn, Value: []string{"active", "pending"}}
-
-	// Example 5: LIKE filter
-	likeFilter := base.FilterCondition{Field: "email", Operator: base.OpLike, Value: "%@example.com"}
-
-	// Example 6: Date range filters
-	startDate := time.Now().AddDate(0, -1, 0) // 1 month ago
-	endDate := time.Now()
-	startFilter := base.FilterCondition{Field: "created_at", Operator: base.OpGreaterEqual, Value: startDate}
-	endFilter := base.FilterCondition{Field: "created_at", Operator: base.OpLessEqual, Value: endDate}
-
-	// Combine filters
-	filters := []base.FilterCondition{
-		equalFilter,
-		ageFilter,
-		containsFilter,
-		inFilter,
-		likeFilter,
-		startFilter,
-		endFilter,
+	// Create a filter with multiple conditions and pagination
+	filter := &base.Filter{
+		Group: base.FilterGroup{
+			Conditions: []base.FilterCondition{
+				{Field: "email", Operator: base.OpEqual, Value: "john@example.com"},
+				{Field: "age", Operator: base.OpGreaterThan, Value: 25},
+				{Field: "name", Operator: base.OpContains, Value: "John"},
+				{Field: "status", Operator: base.OpIn, Value: []string{"active", "pending"}},
+				{Field: "email", Operator: base.OpLike, Value: "%@example.com"},
+				{Field: "created_at", Operator: base.OpGreaterEqual, Value: time.Now().AddDate(0, -1, 0)},
+				{Field: "created_at", Operator: base.OpLessEqual, Value: time.Now()},
+			},
+			Logic: base.LogicAnd,
+		},
+		Sort: []base.SortField{
+			{Field: "created_at", Direction: "desc"},
+		},
+		Limit:  10,
+		Offset: 0,
 	}
 
 	var users []ExampleUser
-	if err := postgresManager.List(ctx, filters, &users); err != nil {
+	if err := postgresManager.List(ctx, filter, &users); err != nil {
 		log.Printf("Failed to list users with filters: %v", err)
 	} else {
 		fmt.Printf("Found %d users matching all filters\n", len(users))
@@ -318,11 +317,16 @@ func ExampleErrorHandling() {
 
 	// Try to apply invalid filters
 	var users []ExampleUser
-	invalidFilters := []base.FilterCondition{
-		{Field: "invalid_field", Operator: "invalid_operator", Value: "test"},
+	invalidFilter := &base.Filter{
+		Group: base.FilterGroup{
+			Conditions: []base.FilterCondition{
+				{Field: "invalid_field", Operator: "invalid_operator", Value: "test"},
+			},
+			Logic: base.LogicAnd,
+		},
 	}
 
-	if err := postgresManager.List(ctx, invalidFilters, &users); err != nil {
+	if err := postgresManager.List(ctx, invalidFilter, &users); err != nil {
 		log.Printf("Expected error for invalid filters: %v", err)
 	}
 }

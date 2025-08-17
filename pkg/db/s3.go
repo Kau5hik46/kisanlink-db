@@ -367,7 +367,7 @@ func (sm *S3Manager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves files from S3 with basic filtering
-func (sm *S3Manager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
+func (sm *S3Manager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	if sm.client == nil {
 		return fmt.Errorf("s3 client not connected")
 	}
@@ -377,22 +377,22 @@ func (sm *S3Manager) List(ctx context.Context, filters []base.FilterCondition, m
 		Bucket: aws.String(sm.config.S3Bucket),
 	}
 
-	// Apply basic filters if provided
-	if len(filters) > 0 {
-		for _, filter := range filters {
-			switch filter.Operator {
+	// Apply filter conditions if provided
+	if filter != nil && len(filter.Group.Conditions) > 0 {
+		for _, condition := range filter.Group.Conditions {
+			switch condition.Operator {
 			case base.OpEqual:
-				if filter.Field == "prefix" {
-					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
+				if condition.Field == "prefix" {
+					listInput.Prefix = aws.String(fmt.Sprint(condition.Value))
 				}
 			case base.OpStartsWith:
-				if filter.Field == "prefix" {
-					listInput.Prefix = aws.String(fmt.Sprint(filter.Value))
+				if condition.Field == "prefix" {
+					listInput.Prefix = aws.String(fmt.Sprint(condition.Value))
 				}
 			default:
 				// S3 has limited filtering capabilities
 				sm.logger.Warn("unsupported filter operator for S3",
-					zap.String("operator", string(filter.Operator)))
+					zap.String("operator", string(condition.Operator)))
 			}
 		}
 	}
@@ -423,6 +423,14 @@ func (sm *S3Manager) List(ctx context.Context, filters []base.FilterCondition, m
 	}
 
 	return nil
+}
+
+// Count counts objects in S3 (stub implementation)
+func (sm *S3Manager) Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error) {
+	// S3 doesn't have traditional counting like SQL databases
+	// This is a stub implementation
+	sm.logger.Warn("Count operation not fully supported for S3")
+	return 0, fmt.Errorf("count operation not supported for S3")
 }
 
 // AutoMigrateModels runs automigration for specific models (S3 doesn't support schema migration)

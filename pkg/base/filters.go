@@ -629,14 +629,13 @@ func (r *BaseFilterableRepository[T]) Update(ctx context.Context, model T) error
 }
 
 // GetByID overrides BaseRepository.GetByID to use database manager if available
-func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string) (T, error) {
+func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string, model T) (T, error) {
 	if r.dbManager != nil {
 		// Use database manager interface
 		if dbMgr, ok := r.dbManager.(interface {
 			GetByID(ctx context.Context, id interface{}, model interface{}) error
 		}); ok {
-			var model T
-			err := dbMgr.GetByID(ctx, id, &model)
+			err := dbMgr.GetByID(ctx, id, model)
 			if err != nil {
 				var zero T
 				return zero, err
@@ -645,11 +644,40 @@ func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string) (T
 		}
 	}
 	// Fallback to in-memory storage
-	return r.BaseRepository.GetByID(ctx, id)
+	return r.BaseRepository.GetByID(ctx, id, model)
+}
+
+// Delete overrides BaseRepository.Delete to use database manager if available
+func (r *BaseFilterableRepository[T]) Delete(ctx context.Context, id string, model T) error {
+	if r.dbManager != nil {
+		// Use database manager interface
+		if dbMgr, ok := r.dbManager.(interface {
+			Delete(ctx context.Context, id interface{}) error
+		}); ok {
+			return dbMgr.Delete(ctx, id)
+		}
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.Delete(ctx, id, model)
 }
 
 // Find implements FilterableRepository.Find
 func (r *BaseFilterableRepository[T]) Find(ctx context.Context, filter *Filter) ([]T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		// Use the exact same interface assertion that works in FindOne
+		if dbMgr, ok := r.dbManager.(interface {
+			List(ctx context.Context, filter *Filter, model interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.List(ctx, filter, &results); err != nil {
+				return nil, fmt.Errorf("database query failed: %w", err)
+			}
+			return results, nil
+		}
+	}
+
+	// Fallback to in-memory filtering
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -694,6 +722,27 @@ func (r *BaseFilterableRepository[T]) Find(ctx context.Context, filter *Filter) 
 
 // FindOne implements FilterableRepository.FindOne
 func (r *BaseFilterableRepository[T]) FindOne(ctx context.Context, filter *Filter) (T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			List(ctx context.Context, filter *Filter, model interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.List(ctx, filter, &results); err != nil {
+				var zero T
+				return zero, fmt.Errorf("database query failed: %w", err)
+			}
+
+			if len(results) == 0 {
+				var zero T
+				return zero, fmt.Errorf("no matching records found")
+			}
+
+			return results[0], nil
+		}
+	}
+
+	// Fallback to in-memory filtering
 	results, err := r.Find(ctx, filter)
 	if err != nil {
 		var zero T
@@ -710,6 +759,17 @@ func (r *BaseFilterableRepository[T]) FindOne(ctx context.Context, filter *Filte
 
 // CountWithFilter implements FilterableRepository.CountWithFilter
 func (r *BaseFilterableRepository[T]) CountWithFilter(ctx context.Context, filter *Filter) (int64, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		// Use the same interface assertion pattern that works in FindOne
+		if dbMgr, ok := r.dbManager.(interface {
+			Count(ctx context.Context, filter *Filter, model interface{}) (int64, error)
+		}); ok {
+			return dbMgr.Count(ctx, filter, nil)
+		}
+	}
+
+	// Fallback to in-memory counting
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

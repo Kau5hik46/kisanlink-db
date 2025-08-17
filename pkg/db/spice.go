@@ -315,7 +315,7 @@ func (sm *SpiceManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // List retrieves relationships from SpiceDB based on filters
-func (sm *SpiceManager) List(ctx context.Context, filters []base.FilterCondition, model interface{}) error {
+func (sm *SpiceManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	client := sm.GetClient()
 	if client == nil {
 		return fmt.Errorf("spicedb client not connected")
@@ -335,6 +335,14 @@ func (sm *SpiceManager) List(ctx context.Context, filters []base.FilterCondition
 	}
 
 	return nil
+}
+
+// Count counts records in SpiceDB (limited support due to SpiceDB's nature)
+func (sm *SpiceManager) Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error) {
+	// SpiceDB doesn't have traditional counting like SQL databases
+	// This is a stub implementation
+	sm.logger.Warn("Count operation not fully supported for SpiceDB")
+	return 0, fmt.Errorf("count operation not supported for SpiceDB")
 }
 
 // AutoMigrateModels runs automigration for specific models (SpiceDB doesn't support schema migration)
