@@ -51,6 +51,21 @@ type DBManager interface {
 	// Count method with filter support
 	Count(ctx context.Context, filter *base.Filter, model interface{}) (int64, error)
 
+	// List with deleted records
+	ListWithDeleted(ctx context.Context, limit, offset int, models interface{}) error
+	CountWithDeleted(ctx context.Context) (int64, error)
+	ExistsWithDeleted(ctx context.Context, id interface{}) (bool, error)
+
+	// Audit operations
+	GetByCreatedBy(ctx context.Context, createdBy interface{}, limit, offset int, models interface{}) error
+	GetByUpdatedBy(ctx context.Context, updatedBy interface{}, limit, offset int, models interface{}) error
+	GetByDeletedBy(ctx context.Context, deletedBy interface{}, limit, offset int, models interface{}) error
+
+	// Bulk operations
+	CreateMany(ctx context.Context, models []interface{}) error
+	UpdateMany(ctx context.Context, models []interface{}) error
+	DeleteMany(ctx context.Context, ids []interface{}) error
+
 	// Migration Operations
 	AutoMigrateModels(ctx context.Context, models ...interface{}) error
 }

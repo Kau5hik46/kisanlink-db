@@ -248,6 +248,237 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 	return err
 }
 
+// SoftDelete soft deletes a record by setting deleted_at and deleted_by fields
+func (dm *DynamoManager) SoftDelete(ctx context.Context, id interface{}, deletedBy string) error {
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll update the item to add deleted_at and deleted_by fields
+	// This is a simplified implementation
+	key := map[string]types.AttributeValue{
+		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
+	}
+
+	updateExpression := "SET deleted_at = :deleted_at, deleted_by = :deleted_by, updated_at = :updated_at"
+	expressionAttributeValues := map[string]types.AttributeValue{
+		":deleted_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		":deleted_by": &types.AttributeValueMemberS{Value: deletedBy},
+		":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+	}
+
+	_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(dm.config.DynamoDBTable),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+		ConditionExpression:       aws.String("attribute_exists(id)"),
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to soft delete record: %w", err)
+	}
+
+	return nil
+}
+
+// SoftDeleteMany soft deletes multiple records
+func (dm *DynamoManager) SoftDeleteMany(ctx context.Context, ids []interface{}, deletedBy string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll process each ID individually
+	// In a production environment, you might want to use BatchWriteItem
+	for _, id := range ids {
+		if err := dm.SoftDelete(ctx, id, deletedBy); err != nil {
+			return fmt.Errorf("failed to soft delete record %v: %w", id, err)
+		}
+	}
+
+	return nil
+}
+
+// Restore restores a soft-deleted record
+func (dm *DynamoManager) Restore(ctx context.Context, id interface{}) error {
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	key := map[string]types.AttributeValue{
+		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
+	}
+
+	updateExpression := "REMOVE deleted_at, deleted_by SET updated_at = :updated_at"
+	expressionAttributeValues := map[string]types.AttributeValue{
+		":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+	}
+
+	_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(dm.config.DynamoDBTable),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+		ConditionExpression:       aws.String("attribute_exists(id)"),
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to restore record: %w", err)
+	}
+
+	return nil
+}
+
+// ListWithDeleted retrieves records including soft-deleted ones
+func (dm *DynamoManager) ListWithDeleted(ctx context.Context, limit, offset int, models interface{}) error {
+	// For DynamoDB, we'll use the regular List method since we can't easily filter by deleted_at
+	return dm.List(ctx, &base.Filter{}, models)
+}
+
+// CountWithDeleted returns count including soft-deleted records
+func (dm *DynamoManager) CountWithDeleted(ctx context.Context) (int64, error) {
+	// For DynamoDB, we'll return an approximate count
+	client := dm.GetClient()
+	if client == nil {
+		return 0, fmt.Errorf("dynamodb client not connected")
+	}
+
+	// This is a simplified implementation - in production you might want to use a different approach
+	result, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(dm.config.DynamoDBTable),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	if result.Table.ItemCount == nil {
+		return 0, nil
+	}
+
+	return *result.Table.ItemCount, nil
+}
+
+// Exists checks if a record exists
+func (dm *DynamoManager) Exists(ctx context.Context, id interface{}) (bool, error) {
+	client := dm.GetClient()
+	if client == nil {
+		return false, fmt.Errorf("dynamodb client not connected")
+	}
+
+	key := map[string]types.AttributeValue{
+		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
+	}
+
+	result, err := client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(dm.config.DynamoDBTable),
+		Key:       key,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return result.Item != nil, nil
+}
+
+// ExistsWithDeleted checks if record exists including soft-deleted ones
+func (dm *DynamoManager) ExistsWithDeleted(ctx context.Context, id interface{}) (bool, error) {
+	// For DynamoDB, we'll use the regular Exists method
+	return dm.Exists(ctx, id)
+}
+
+// GetByCreatedBy gets records by creator
+func (dm *DynamoManager) GetByCreatedBy(ctx context.Context, createdBy interface{}, limit, offset int, models interface{}) error {
+	// For DynamoDB, we'll use a GSI if available, otherwise return empty
+	// This is a simplified implementation
+	return fmt.Errorf("GetByCreatedBy not implemented for DynamoDB")
+}
+
+// GetByUpdatedBy gets records by updater
+func (dm *DynamoManager) GetByUpdatedBy(ctx context.Context, updatedBy interface{}, limit, offset int, models interface{}) error {
+	// For DynamoDB, we'll use a GSI if available, otherwise return empty
+	// This is a simplified implementation
+	return fmt.Errorf("GetByUpdatedBy not implemented for DynamoDB")
+}
+
+// GetByDeletedBy gets records by deleter
+func (dm *DynamoManager) GetByDeletedBy(ctx context.Context, deletedBy interface{}, limit, offset int, models interface{}) error {
+	// For DynamoDB, we'll use a GSI if available, otherwise return empty
+	// This is a simplified implementation
+	return fmt.Errorf("GetByDeletedBy not implemented for DynamoDB")
+}
+
+// CreateMany creates multiple records
+func (dm *DynamoManager) CreateMany(ctx context.Context, models []interface{}) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll process each model individually
+	// In a production environment, you might want to use BatchWriteItem
+	for _, model := range models {
+		if err := dm.Create(ctx, model); err != nil {
+			return fmt.Errorf("failed to create model: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// UpdateMany updates multiple records
+func (dm *DynamoManager) UpdateMany(ctx context.Context, models []interface{}) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll process each model individually
+	for _, model := range models {
+		if err := dm.Update(ctx, model); err != nil {
+			return fmt.Errorf("failed to update model: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// DeleteMany deletes multiple records
+func (dm *DynamoManager) DeleteMany(ctx context.Context, ids []interface{}) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	client := dm.GetClient()
+	if client == nil {
+		return fmt.Errorf("dynamodb client not connected")
+	}
+
+	// For DynamoDB, we'll process each ID individually
+	// In a production environment, you might want to use BatchWriteItem
+	for _, id := range ids {
+		if err := dm.Delete(ctx, id); err != nil {
+			return fmt.Errorf("failed to delete record %v: %w", id, err)
+		}
+	}
+
+	return nil
+}
+
 // List retrieves records from DynamoDB with filter support including pagination
 func (dm *DynamoManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	client := dm.GetClient()

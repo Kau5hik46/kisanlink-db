@@ -284,6 +284,154 @@ func (pm *PostgresManager) Delete(ctx context.Context, id interface{}) error {
 	return db.WithContext(ctx).Delete("", id).Error
 }
 
+// ListWithDeleted retrieves records including soft-deleted ones
+func (pm *PostgresManager) ListWithDeleted(ctx context.Context, limit, offset int, models interface{}) error {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	query := db.WithContext(ctx).Unscoped() // Include soft-deleted records
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	return query.Find(models).Error
+}
+
+// CountWithDeleted returns count including soft-deleted records
+func (pm *PostgresManager) CountWithDeleted(ctx context.Context) (int64, error) {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	var count int64
+	err = db.WithContext(ctx).Unscoped().Model(&struct{}{}).Count(&count).Error
+	return count, err
+}
+
+// ExistsWithDeleted checks if record exists including soft-deleted ones
+func (pm *PostgresManager) ExistsWithDeleted(ctx context.Context, id interface{}) (bool, error) {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return false, fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	var count int64
+	err = db.WithContext(ctx).Unscoped().Model(&struct{}{}).Where("id = ?", id).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// GetByCreatedBy gets records by creator
+func (pm *PostgresManager) GetByCreatedBy(ctx context.Context, createdBy interface{}, limit, offset int, models interface{}) error {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	query := db.WithContext(ctx).Where("created_by = ?", createdBy)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	return query.Find(models).Error
+}
+
+// GetByUpdatedBy gets records by updater
+func (pm *PostgresManager) GetByUpdatedBy(ctx context.Context, updatedBy interface{}, limit, offset int, models interface{}) error {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	query := db.WithContext(ctx).Where("updated_by = ?", updatedBy)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	return query.Find(models).Error
+}
+
+// GetByDeletedBy gets records by deleter
+func (pm *PostgresManager) GetByDeletedBy(ctx context.Context, deletedBy interface{}, limit, offset int, models interface{}) error {
+	db, err := pm.GetDB(ctx, true)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	query := db.WithContext(ctx).Unscoped().Where("deleted_by = ?", deletedBy)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	return query.Find(models).Error
+}
+
+// CreateMany creates multiple records
+func (pm *PostgresManager) CreateMany(ctx context.Context, models []interface{}) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	return db.WithContext(ctx).CreateInBatches(models, 100).Error
+}
+
+// UpdateMany updates multiple records
+func (pm *PostgresManager) UpdateMany(ctx context.Context, models []interface{}) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	for _, model := range models {
+		if err := db.WithContext(ctx).Save(model).Error; err != nil {
+			return fmt.Errorf("failed to update model: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// DeleteMany deletes multiple records
+func (pm *PostgresManager) DeleteMany(ctx context.Context, ids []interface{}) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	return db.WithContext(ctx).Delete("", ids).Error
+}
+
 // List retrieves records from PostgreSQL with filter support including pagination and sorting
 func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	db, err := pm.GetDB(ctx, true)

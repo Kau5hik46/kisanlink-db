@@ -630,19 +630,19 @@ func (r *BaseFilterableRepository[T]) Update(ctx context.Context, model T) error
 
 // GetByID overrides BaseRepository.GetByID to use database manager if available
 func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string, model T) (T, error) {
+	// If database manager is available, use it for database-level operations
 	if r.dbManager != nil {
-		// Use database manager interface
 		if dbMgr, ok := r.dbManager.(interface {
 			GetByID(ctx context.Context, id interface{}, model interface{}) error
 		}); ok {
-			err := dbMgr.GetByID(ctx, id, model)
-			if err != nil {
+			if err := dbMgr.GetByID(ctx, id, model); err != nil {
 				var zero T
-				return zero, err
+				return zero, fmt.Errorf("database query failed: %w", err)
 			}
 			return model, nil
 		}
 	}
+
 	// Fallback to in-memory storage
 	return r.BaseRepository.GetByID(ctx, id, model)
 }
@@ -659,6 +659,57 @@ func (r *BaseFilterableRepository[T]) Delete(ctx context.Context, id string, mod
 	}
 	// Fallback to in-memory storage
 	return r.BaseRepository.Delete(ctx, id, model)
+}
+
+// Exists overrides BaseRepository.Exists to use database manager if available
+func (r *BaseFilterableRepository[T]) Exists(ctx context.Context, id string) (bool, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			Exists(ctx context.Context, id interface{}) (bool, error)
+		}); ok {
+			return dbMgr.Exists(ctx, id)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.Exists(ctx, id)
+}
+
+// Count overrides BaseRepository.Count to use database manager if available
+func (r *BaseFilterableRepository[T]) Count(ctx context.Context, filter *Filter, model interface{}) (int64, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		// Use the same interface assertion pattern that works in FindOne
+		if dbMgr, ok := r.dbManager.(interface {
+			Count(ctx context.Context, filter *Filter, model interface{}) (int64, error)
+		}); ok {
+			return dbMgr.Count(ctx, filter, nil)
+		}
+	}
+
+	// Fallback to in-memory counting
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var count int64
+	for _, model := range r.models {
+		// Skip soft deleted models unless explicitly requested
+		if model.IsDeleted() && !r.shouldIncludeDeleted(filter) {
+			continue
+		}
+
+		matches, err := r.evaluator.Evaluate(filter, model)
+		if err != nil {
+			return 0, fmt.Errorf("filter evaluation failed: %w", err)
+		}
+
+		if matches {
+			count++
+		}
+	}
+
+	return count, nil
 }
 
 // Find implements FilterableRepository.Find
@@ -937,4 +988,170 @@ func (r *BaseFilterableRepository[T]) sortResults(results []T, sortFields []Sort
 		// In practice, you'd implement proper field-based sorting
 		_ = sortField // Use sortField to avoid unused variable warning
 	}
+}
+
+// GetByCreatedBy overrides BaseRepository.GetByCreatedBy to use database manager if available
+func (r *BaseFilterableRepository[T]) GetByCreatedBy(ctx context.Context, createdBy string, limit, offset int) ([]T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			GetByCreatedBy(ctx context.Context, createdBy interface{}, limit, offset int, models interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.GetByCreatedBy(ctx, createdBy, limit, offset, &results); err != nil {
+				return nil, fmt.Errorf("database query failed: %w", err)
+			}
+			return results, nil
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.GetByCreatedBy(ctx, createdBy, limit, offset)
+}
+
+// GetByUpdatedBy overrides BaseRepository.GetByUpdatedBy to use database manager if available
+func (r *BaseFilterableRepository[T]) GetByUpdatedBy(ctx context.Context, updatedBy string, limit, offset int) ([]T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			GetByUpdatedBy(ctx context.Context, updatedBy interface{}, limit, offset int, models interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.GetByUpdatedBy(ctx, updatedBy, limit, offset, &results); err != nil {
+				return nil, fmt.Errorf("database query failed: %w", err)
+			}
+			return results, nil
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.GetByUpdatedBy(ctx, updatedBy, limit, offset)
+}
+
+// GetByDeletedBy overrides BaseRepository.GetByDeletedBy to use database manager if available
+func (r *BaseFilterableRepository[T]) GetByDeletedBy(ctx context.Context, deletedBy string, limit, offset int) ([]T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			GetByDeletedBy(ctx context.Context, deletedBy interface{}, limit, offset int, models interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.GetByDeletedBy(ctx, deletedBy, limit, offset, &results); err != nil {
+				return nil, fmt.Errorf("database query failed: %w", err)
+			}
+			return results, nil
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.GetByDeletedBy(ctx, deletedBy, limit, offset)
+}
+
+// ListWithDeleted overrides BaseRepository.ListWithDeleted to use database manager if available
+func (r *BaseFilterableRepository[T]) ListWithDeleted(ctx context.Context, limit, offset int) ([]T, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			ListWithDeleted(ctx context.Context, limit, offset int, models interface{}) error
+		}); ok {
+			var results []T
+			if err := dbMgr.ListWithDeleted(ctx, limit, offset, &results); err != nil {
+				return nil, fmt.Errorf("database query failed: %w", err)
+			}
+			return results, nil
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.ListWithDeleted(ctx, limit, offset)
+}
+
+// CountWithDeleted overrides BaseRepository.CountWithDeleted to use database manager if available
+func (r *BaseFilterableRepository[T]) CountWithDeleted(ctx context.Context) (int64, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			CountWithDeleted(ctx context.Context) (int64, error)
+		}); ok {
+			return dbMgr.CountWithDeleted(ctx)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.CountWithDeleted(ctx)
+}
+
+// ExistsWithDeleted overrides BaseRepository.ExistsWithDeleted to use database manager if available
+func (r *BaseFilterableRepository[T]) ExistsWithDeleted(ctx context.Context, id string) (bool, error) {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			ExistsWithDeleted(ctx context.Context, id interface{}) (bool, error)
+		}); ok {
+			return dbMgr.ExistsWithDeleted(ctx, id)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.ExistsWithDeleted(ctx, id)
+}
+
+// CreateMany overrides BaseRepository.CreateMany to use database manager if available
+func (r *BaseFilterableRepository[T]) CreateMany(ctx context.Context, models []T) error {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			CreateMany(ctx context.Context, models []interface{}) error
+		}); ok {
+			// Convert []T to []interface{}
+			interfaceModels := make([]interface{}, len(models))
+			for i, model := range models {
+				interfaceModels[i] = model
+			}
+			return dbMgr.CreateMany(ctx, interfaceModels)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.CreateMany(ctx, models)
+}
+
+// UpdateMany overrides BaseRepository.UpdateMany to use database manager if available
+func (r *BaseFilterableRepository[T]) UpdateMany(ctx context.Context, models []T) error {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			UpdateMany(ctx context.Context, models []interface{}) error
+		}); ok {
+			// Convert []T to []interface{}
+			interfaceModels := make([]interface{}, len(models))
+			for i, model := range models {
+				interfaceModels[i] = model
+			}
+			return dbMgr.UpdateMany(ctx, interfaceModels)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.UpdateMany(ctx, models)
+}
+
+// DeleteMany overrides BaseRepository.DeleteMany to use database manager if available
+func (r *BaseFilterableRepository[T]) DeleteMany(ctx context.Context, ids []string) error {
+	// If database manager is available, use it for database-level operations
+	if r.dbManager != nil {
+		if dbMgr, ok := r.dbManager.(interface {
+			DeleteMany(ctx context.Context, ids []interface{}) error
+		}); ok {
+			// Convert []string to []interface{}
+			interfaceIDs := make([]interface{}, len(ids))
+			for i, id := range ids {
+				interfaceIDs[i] = id
+			}
+			return dbMgr.DeleteMany(ctx, interfaceIDs)
+		}
+	}
+
+	// Fallback to in-memory storage
+	return r.BaseRepository.DeleteMany(ctx, ids)
 }
