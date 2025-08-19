@@ -4,8 +4,11 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+
+	"unicode"
 
 	"github.com/Kisanlink/kisanlink-db/pkg/base"
 	"github.com/cenkalti/backoff/v4"
@@ -276,12 +279,91 @@ func (pm *PostgresManager) Update(ctx context.Context, model interface{}) error 
 }
 
 // Delete deletes a record by ID
-func (pm *PostgresManager) Delete(ctx context.Context, id interface{}) error {
+func (pm *PostgresManager) Delete(ctx context.Context, id interface{}, model interface{}) error {
 	db, err := pm.GetDB(ctx, false)
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
 	}
-	return db.WithContext(ctx).Delete("", id).Error
+
+	// Use the model to determine the table name
+	tableName := pm.getTableName(model)
+	return db.WithContext(ctx).Table(tableName).Where("id = ?", id).Delete("").Error
+}
+
+// SoftDelete soft deletes a record by setting deleted_at and deleted_by fields
+func (pm *PostgresManager) SoftDelete(ctx context.Context, id interface{}, model interface{}, deletedBy string) error {
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	// Extract table name from the model
+	tableName := pm.getTableName(model)
+
+	// Check if record exists and is not already deleted
+	var count int64
+	if err := db.WithContext(ctx).Table(tableName).Where("id = ? AND deleted_at IS NULL", id).Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to check record existence in table %s: %w", tableName, err)
+	}
+
+	if count == 0 {
+		return fmt.Errorf("record with id %v not found in table %s or already deleted", id, tableName)
+	}
+
+	// Perform soft delete
+	result := db.WithContext(ctx).Table(tableName).Where("id = ? AND deleted_at IS NULL", id).Updates(map[string]interface{}{
+		"deleted_at": time.Now(),
+		"deleted_by": deletedBy,
+		"updated_at": time.Now(),
+	})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to soft delete from table %s: %w", tableName, result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no records were soft deleted from table %s", tableName)
+	}
+
+	return nil
+}
+
+// Restore restores a soft-deleted record
+func (pm *PostgresManager) Restore(ctx context.Context, id interface{}, model interface{}) error {
+	db, err := pm.GetDB(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get database connection: %w", err)
+	}
+
+	// Extract table name from the model
+	tableName := pm.getTableName(model)
+
+	// Check if record exists and is soft deleted
+	var count int64
+	if err := db.WithContext(ctx).Table(tableName).Where("id = ? AND deleted_at IS NOT NULL", id).Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to check record existence in table %s: %w", tableName, err)
+	}
+
+	if count == 0 {
+		return fmt.Errorf("soft-deleted record with id %v not found in table %s", id, tableName)
+	}
+
+	// Restore the record
+	result := db.WithContext(ctx).Table(tableName).Where("id = ? AND deleted_at IS NOT NULL", id).Updates(map[string]interface{}{
+		"deleted_at": nil,
+		"deleted_by": nil,
+		"updated_at": time.Now(),
+	})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to restore from table %s: %w", tableName, result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no records were restored from table %s", tableName)
+	}
+
+	return nil
 }
 
 // ListWithDeleted retrieves records including soft-deleted ones
@@ -655,4 +737,66 @@ type GormLogger struct {
 // Printf logs a formatted message using zap
 func (l *GormLogger) Printf(format string, args ...interface{}) {
 	l.logger.Sugar().Infof(format, args...)
+}
+
+// getTableName extracts the table name from a model
+func (pm *PostgresManager) getTableName(model interface{}) string {
+	// Try to get table name from the model if it implements a specific interface
+	if tableModel, ok := model.(interface {
+		GetTableName() string
+	}); ok {
+		return tableModel.GetTableName()
+	}
+
+	// Try to get table name from the model if it has a TableName method
+	if tableModel, ok := model.(interface {
+		TableName() string
+	}); ok {
+		return tableModel.TableName()
+	}
+
+	// Try to get table name from the model if it has a constant
+	if tableModel, ok := model.(interface {
+		GetTableConstant() string
+	}); ok {
+		return tableModel.GetTableConstant()
+	}
+
+	// Default fallback - use reflection to get the type name and convert to snake_case
+	return pm.getDefaultTableName(model)
+}
+
+// getDefaultTableName provides a default table name based on the model type
+func (pm *PostgresManager) getDefaultTableName(model interface{}) string {
+	// This is a fallback that tries to infer the table name from the type
+	// In practice, models should implement one of the table name interfaces above
+	typeName := fmt.Sprintf("%T", model)
+
+	// Remove package prefix and pointer
+	if idx := strings.LastIndex(typeName, "."); idx != -1 {
+		typeName = typeName[idx+1:]
+	}
+	if strings.HasPrefix(typeName, "*") {
+		typeName = typeName[1:]
+	}
+
+	// Convert to snake_case and pluralize
+	tableName := pm.toSnakeCase(typeName)
+	if !strings.HasSuffix(tableName, "s") {
+		tableName += "s"
+	}
+
+	return tableName
+}
+
+// toSnakeCase converts CamelCase to snake_case
+func (pm *PostgresManager) toSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if i > 0 && unicode.IsUpper(r) {
+			result.WriteByte('_')
+		}
+		result.WriteRune(unicode.ToLower(r))
+	}
+	return result.String()
 }

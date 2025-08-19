@@ -230,12 +230,13 @@ func (dm *DynamoManager) Update(ctx context.Context, model interface{}) error {
 }
 
 // Delete deletes a record by ID from DynamoDB
-func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
+func (dm *DynamoManager) Delete(ctx context.Context, id interface{}, model interface{}) error {
 	client := dm.GetClient()
 	if client == nil {
 		return fmt.Errorf("dynamodb client not connected")
 	}
 
+	// Use the provided ID directly
 	key := map[string]types.AttributeValue{
 		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
 	}
@@ -249,35 +250,34 @@ func (dm *DynamoManager) Delete(ctx context.Context, id interface{}) error {
 }
 
 // SoftDelete soft deletes a record by setting deleted_at and deleted_by fields
-func (dm *DynamoManager) SoftDelete(ctx context.Context, id interface{}, deletedBy string) error {
-	client := dm.GetClient()
-	if client == nil {
-		return fmt.Errorf("dynamodb client not connected")
-	}
+func (dm *DynamoManager) SoftDelete(ctx context.Context, id interface{}, model interface{}, deletedBy string) error {
+	// For DynamoDB, we'll implement soft delete by updating the item
+	// The model parameter is used to determine the table name
+	tableName := dm.GetTableName()
 
-	// For DynamoDB, we'll update the item to add deleted_at and deleted_by fields
-	// This is a simplified implementation
-	key := map[string]types.AttributeValue{
-		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
-	}
-
-	updateExpression := "SET deleted_at = :deleted_at, deleted_by = :deleted_by, updated_at = :updated_at"
-	expressionAttributeValues := map[string]types.AttributeValue{
-		":deleted_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		":deleted_by": &types.AttributeValueMemberS{Value: deletedBy},
-		":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-	}
-
-	_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(dm.config.DynamoDBTable),
-		Key:                       key,
-		UpdateExpression:          aws.String(updateExpression),
-		ExpressionAttributeValues: expressionAttributeValues,
-		ConditionExpression:       aws.String("attribute_exists(id)"),
-	})
-
+	// Get the current item
+	err := dm.GetByID(ctx, id, model)
 	if err != nil {
-		return fmt.Errorf("failed to soft delete record: %w", err)
+		return fmt.Errorf("failed to get item for soft delete: %w", err)
+	}
+
+	// Update the item with soft delete fields
+	updateInput := &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"id": &types.AttributeValueMemberS{Value: fmt.Sprintf("%v", id)},
+		},
+		UpdateExpression: aws.String("SET deleted_at = :deleted_at, deleted_by = :deleted_by, updated_at = :updated_at"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":deleted_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+			":deleted_by": &types.AttributeValueMemberS{Value: deletedBy},
+			":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	_, err = dm.client.UpdateItem(ctx, updateInput)
+	if err != nil {
+		return fmt.Errorf("failed to soft delete item: %w", err)
 	}
 
 	return nil
@@ -297,7 +297,7 @@ func (dm *DynamoManager) SoftDeleteMany(ctx context.Context, ids []interface{}, 
 	// For DynamoDB, we'll process each ID individually
 	// In a production environment, you might want to use BatchWriteItem
 	for _, id := range ids {
-		if err := dm.SoftDelete(ctx, id, deletedBy); err != nil {
+		if err := dm.SoftDelete(ctx, id, nil, deletedBy); err != nil { // Pass nil for model as it's not needed for DeleteMany
 			return fmt.Errorf("failed to soft delete record %v: %w", id, err)
 		}
 	}
@@ -306,31 +306,32 @@ func (dm *DynamoManager) SoftDeleteMany(ctx context.Context, ids []interface{}, 
 }
 
 // Restore restores a soft-deleted record
-func (dm *DynamoManager) Restore(ctx context.Context, id interface{}) error {
-	client := dm.GetClient()
-	if client == nil {
-		return fmt.Errorf("dynamodb client not connected")
-	}
+func (dm *DynamoManager) Restore(ctx context.Context, id interface{}, model interface{}) error {
+	// For DynamoDB, we'll implement restore by updating the item
+	// The model parameter is used to determine the table name
+	tableName := dm.GetTableName()
 
-	key := map[string]types.AttributeValue{
-		"id": &types.AttributeValueMemberS{Value: fmt.Sprint(id)},
-	}
-
-	updateExpression := "REMOVE deleted_at, deleted_by SET updated_at = :updated_at"
-	expressionAttributeValues := map[string]types.AttributeValue{
-		":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-	}
-
-	_, err := client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(dm.config.DynamoDBTable),
-		Key:                       key,
-		UpdateExpression:          aws.String(updateExpression),
-		ExpressionAttributeValues: expressionAttributeValues,
-		ConditionExpression:       aws.String("attribute_exists(id)"),
-	})
-
+	// Get the current item
+	err := dm.GetByID(ctx, id, model)
 	if err != nil {
-		return fmt.Errorf("failed to restore record: %w", err)
+		return fmt.Errorf("failed to get item for restore: %w", err)
+	}
+
+	// Update the item to remove soft delete fields
+	updateInput := &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"id": &types.AttributeValueMemberS{Value: fmt.Sprintf("%v", id)},
+		},
+		UpdateExpression: aws.String("REMOVE deleted_at, deleted_by SET updated_at = :updated_at"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":updated_at": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	_, err = dm.client.UpdateItem(ctx, updateInput)
+	if err != nil {
+		return fmt.Errorf("failed to restore item: %w", err)
 	}
 
 	return nil
@@ -471,7 +472,7 @@ func (dm *DynamoManager) DeleteMany(ctx context.Context, ids []interface{}) erro
 	// For DynamoDB, we'll process each ID individually
 	// In a production environment, you might want to use BatchWriteItem
 	for _, id := range ids {
-		if err := dm.Delete(ctx, id); err != nil {
+		if err := dm.Delete(ctx, id, nil); err != nil { // Pass nil for model as it's not needed for DeleteMany
 			return fmt.Errorf("failed to delete record %v: %w", id, err)
 		}
 	}

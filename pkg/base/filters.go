@@ -650,15 +650,53 @@ func (r *BaseFilterableRepository[T]) GetByID(ctx context.Context, id string, mo
 // Delete overrides BaseRepository.Delete to use database manager if available
 func (r *BaseFilterableRepository[T]) Delete(ctx context.Context, id string, model T) error {
 	if r.dbManager != nil {
-		// Use database manager interface
+		// Use the enhanced database manager interface that takes both id and model
 		if dbMgr, ok := r.dbManager.(interface {
-			Delete(ctx context.Context, id interface{}) error
+			Delete(ctx context.Context, id interface{}, model interface{}) error
 		}); ok {
-			return dbMgr.Delete(ctx, id)
+			return dbMgr.Delete(ctx, id, model)
 		}
 	}
 	// Fallback to in-memory storage
 	return r.BaseRepository.Delete(ctx, id, model)
+}
+
+// SoftDelete performs a soft delete operation using the database manager if available
+func (r *BaseFilterableRepository[T]) SoftDelete(ctx context.Context, id string, deletedBy string) error {
+	if r.dbManager != nil {
+		// Try to use an enhanced database manager interface that supports soft delete
+		if enhancedDBMgr, ok := r.dbManager.(interface {
+			SoftDelete(ctx context.Context, id interface{}, model interface{}, deletedBy string) error
+		}); ok {
+			// Create a zero value of the generic type to pass as model
+			var zero T
+			return enhancedDBMgr.SoftDelete(ctx, id, &zero, deletedBy)
+		}
+
+		// Fallback to standard soft delete through the base repository
+		return r.BaseRepository.SoftDelete(ctx, id, deletedBy)
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.SoftDelete(ctx, id, deletedBy)
+}
+
+// Restore performs a restore operation using the database manager if available
+func (r *BaseFilterableRepository[T]) Restore(ctx context.Context, id string) error {
+	if r.dbManager != nil {
+		// Try to use an enhanced database manager interface that supports restore
+		if enhancedDBMgr, ok := r.dbManager.(interface {
+			Restore(ctx context.Context, id interface{}, model interface{}) error
+		}); ok {
+			// Create a zero value of the generic type to pass as model
+			var zero T
+			return enhancedDBMgr.Restore(ctx, id, &zero)
+		}
+
+		// Fallback to standard restore through the base repository
+		return r.BaseRepository.Restore(ctx, id)
+	}
+	// Fallback to in-memory storage
+	return r.BaseRepository.Restore(ctx, id)
 }
 
 // Exists overrides BaseRepository.Exists to use database manager if available

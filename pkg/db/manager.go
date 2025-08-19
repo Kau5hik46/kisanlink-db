@@ -43,7 +43,11 @@ type DBManager interface {
 	Create(ctx context.Context, model interface{}) error
 	GetByID(ctx context.Context, id interface{}, model interface{}) error
 	Update(ctx context.Context, model interface{}) error
-	Delete(ctx context.Context, id interface{}) error
+	Delete(ctx context.Context, id interface{}, model interface{}) error
+
+	// Soft Delete Operations
+	SoftDelete(ctx context.Context, id interface{}, model interface{}, deletedBy string) error
+	Restore(ctx context.Context, id interface{}, model interface{}) error
 
 	// Enhanced List method that uses the unified Filter structure with pagination
 	List(ctx context.Context, filter *base.Filter, model interface{}) error

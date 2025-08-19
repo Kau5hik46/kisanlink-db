@@ -100,7 +100,7 @@ func ExampleCRUD() {
 	}
 
 	// Example 5: Delete user
-	if err := postgresManager.Delete(ctx, "user-1"); err != nil {
+	if err := postgresManager.Delete(ctx, "user-1", user); err != nil {
 		log.Printf("Failed to delete user: %v", err)
 	} else {
 		fmt.Printf("Deleted user: %s\n", user.Name)
