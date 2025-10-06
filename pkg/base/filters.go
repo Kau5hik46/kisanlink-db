@@ -722,7 +722,9 @@ func (r *BaseFilterableRepository[T]) Count(ctx context.Context, filter *Filter,
 		if dbMgr, ok := r.dbManager.(interface {
 			Count(ctx context.Context, filter *Filter, model interface{}) (int64, error)
 		}); ok {
-			return dbMgr.Count(ctx, filter, nil)
+			// Use the model parameter that's already being passed
+			// This ensures GORM can determine the table name properly
+			return dbMgr.Count(ctx, filter, model)
 		}
 	}
 
@@ -854,7 +856,10 @@ func (r *BaseFilterableRepository[T]) CountWithFilter(ctx context.Context, filte
 		if dbMgr, ok := r.dbManager.(interface {
 			Count(ctx context.Context, filter *Filter, model interface{}) (int64, error)
 		}); ok {
-			return dbMgr.Count(ctx, filter, nil)
+			// Create a properly initialized model instance to pass to the database manager
+			// This ensures GORM can determine the table name properly
+			var zero T
+			return dbMgr.Count(ctx, filter, &zero)
 		}
 	}
 
@@ -1105,13 +1110,13 @@ func (r *BaseFilterableRepository[T]) ListWithDeleted(ctx context.Context, limit
 }
 
 // CountWithDeleted overrides BaseRepository.CountWithDeleted to use database manager if available
-func (r *BaseFilterableRepository[T]) CountWithDeleted(ctx context.Context) (int64, error) {
+func (r *BaseFilterableRepository[T]) CountWithDeleted(ctx context.Context, model interface{}) (int64, error) {
 	// If database manager is available, use it for database-level operations
 	if r.dbManager != nil {
 		if dbMgr, ok := r.dbManager.(interface {
-			CountWithDeleted(ctx context.Context) (int64, error)
+			CountWithDeleted(ctx context.Context, model interface{}) (int64, error)
 		}); ok {
-			return dbMgr.CountWithDeleted(ctx)
+			return dbMgr.CountWithDeleted(ctx, model)
 		}
 	}
 

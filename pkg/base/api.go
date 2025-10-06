@@ -134,6 +134,14 @@ type PaginationInfo struct {
 
 // NewPaginationInfo creates pagination info with calculated fields.
 func NewPaginationInfo(page, perPage, total int) *PaginationInfo {
+	// Safety check to prevent division by zero
+	if perPage <= 0 {
+		perPage = 1
+	}
+	if page <= 0 {
+		page = 1
+	}
+
 	totalPages := (total + perPage - 1) / perPage // Ceiling division
 	if totalPages == 0 {
 		totalPages = 1

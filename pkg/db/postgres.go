@@ -385,14 +385,14 @@ func (pm *PostgresManager) ListWithDeleted(ctx context.Context, limit, offset in
 }
 
 // CountWithDeleted returns count including soft-deleted records
-func (pm *PostgresManager) CountWithDeleted(ctx context.Context) (int64, error) {
+func (pm *PostgresManager) CountWithDeleted(ctx context.Context, model interface{}) (int64, error) {
 	db, err := pm.GetDB(ctx, true)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database connection: %w", err)
 	}
 
 	var count int64
-	err = db.WithContext(ctx).Unscoped().Model(&struct{}{}).Count(&count).Error
+	err = db.WithContext(ctx).Unscoped().Model(model).Count(&count).Error
 	return count, err
 }
 

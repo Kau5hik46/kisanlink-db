@@ -57,7 +57,7 @@ type DBManager interface {
 
 	// List with deleted records
 	ListWithDeleted(ctx context.Context, limit, offset int, models interface{}) error
-	CountWithDeleted(ctx context.Context) (int64, error)
+	CountWithDeleted(ctx context.Context, model interface{}) (int64, error)
 	ExistsWithDeleted(ctx context.Context, id interface{}) (bool, error)
 
 	// Audit operations

@@ -344,7 +344,7 @@ func (dm *DynamoManager) ListWithDeleted(ctx context.Context, limit, offset int,
 }
 
 // CountWithDeleted returns count including soft-deleted records
-func (dm *DynamoManager) CountWithDeleted(ctx context.Context) (int64, error) {
+func (dm *DynamoManager) CountWithDeleted(ctx context.Context, model interface{}) (int64, error) {
 	// For DynamoDB, we'll return an approximate count
 	client := dm.GetClient()
 	if client == nil {

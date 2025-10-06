@@ -424,7 +424,7 @@ func (sm *SpiceManager) ListWithDeleted(ctx context.Context, limit, offset int, 
 }
 
 // CountWithDeleted returns count including soft-deleted records
-func (sm *SpiceManager) CountWithDeleted(ctx context.Context) (int64, error) {
+func (sm *SpiceManager) CountWithDeleted(ctx context.Context, model interface{}) (int64, error) {
 	// For SpiceDB, we'll return 0 as it's not applicable
 	return 0, nil
 }
