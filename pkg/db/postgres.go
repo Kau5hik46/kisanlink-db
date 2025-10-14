@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -514,7 +515,48 @@ func (pm *PostgresManager) DeleteMany(ctx context.Context, ids []interface{}) er
 	return db.WithContext(ctx).Delete("", ids).Error
 }
 
-// List retrieves records from PostgreSQL with filter support including pagination and sorting
+// validateSelectFields validates field names for SQL injection prevention
+// Validates against max 50 fields and ensures each field matches the pattern:
+// ^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$
+func (pm *PostgresManager) validateSelectFields(fields []string) error {
+	if len(fields) > 50 {
+		return fmt.Errorf("too many select fields: %d (max: 50)", len(fields))
+	}
+	// Pattern allows: field_name or table.field_name
+	validFieldPattern := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$`)
+	for _, field := range fields {
+		if !validFieldPattern.MatchString(field) {
+			return fmt.Errorf("invalid field name: %s", field)
+		}
+	}
+	return nil
+}
+
+// validatePreload validates preload relation names and depth
+// Validates against max depth of 3 (e.g., "CropCycle.Crop.Variety")
+func (pm *PostgresManager) validatePreload(preload base.Preload) error {
+	// Pattern allows nested relations: Relation or Relation.NestedRelation
+	validFieldPattern := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`)
+	if !validFieldPattern.MatchString(preload.Relation) {
+		return fmt.Errorf("invalid preload relation: %s", preload.Relation)
+	}
+
+	// Check depth (max 3 levels: e.g., "CropCycle.Crop.Variety")
+	depth := strings.Count(preload.Relation, ".") + 1
+	if depth > 3 {
+		return fmt.Errorf("preload depth %d exceeds maximum 3: %s", depth, preload.Relation)
+	}
+
+	return nil
+}
+
+// List retrieves records from PostgreSQL with filter support including pagination, sorting, preloads, and selects
+// Operation order (critical for performance and security):
+// 1. Apply filter conditions (reduce rows)
+// 2. Apply select with validation (reduce columns)
+// 3. Apply sorting
+// 4. Apply pagination
+// 5. Apply preloads with validation (only on paginated results)
 func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model interface{}) error {
 	db, err := pm.GetDB(ctx, true)
 	if err != nil {
@@ -524,12 +566,20 @@ func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model 
 	// Set the model/table context for GORM
 	query := db.WithContext(ctx).Model(model)
 
-	// Apply filter conditions if provided
+	// 1. Apply filter conditions FIRST (reduce rows)
 	if filter != nil {
 		pm.applyFilterGroup(query, &filter.Group)
 	}
 
-	// Apply sorting if provided
+	// 2. Apply select (reduce columns) with validation
+	if filter != nil && len(filter.Selects) > 0 {
+		if err := pm.validateSelectFields(filter.Selects); err != nil {
+			return fmt.Errorf("invalid select fields: %w", err)
+		}
+		query = query.Select(filter.Selects)
+	}
+
+	// 3. Apply sorting
 	if filter != nil && len(filter.Sort) > 0 {
 		for _, sort := range filter.Sort {
 			direction := "ASC"
@@ -540,7 +590,7 @@ func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model 
 		}
 	}
 
-	// Apply pagination if provided
+	// 4. Apply pagination
 	if filter != nil {
 		if filter.Limit > 0 {
 			query = query.Limit(filter.Limit)
@@ -552,6 +602,23 @@ func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model 
 		if filter.Page > 0 && filter.PageSize > 0 {
 			offset := (filter.Page - 1) * filter.PageSize
 			query = query.Limit(filter.PageSize).Offset(offset)
+		}
+	}
+
+	// 5. Apply preloads LAST (only on paginated results) with validation
+	if filter != nil && len(filter.Preloads) > 0 {
+		if len(filter.Preloads) > 5 {
+			return fmt.Errorf("too many preloads: %d (max: 5)", len(filter.Preloads))
+		}
+		for _, preload := range filter.Preloads {
+			if err := pm.validatePreload(preload); err != nil {
+				return fmt.Errorf("invalid preload: %w", err)
+			}
+			if len(preload.Conditions) > 0 {
+				query = query.Preload(preload.Relation, preload.Conditions...)
+			} else {
+				query = query.Preload(preload.Relation)
+			}
 		}
 	}
 

@@ -68,6 +68,12 @@ const (
 	LogicOr  FilterLogic = "or"
 )
 
+// Preload represents a relationship to eager load
+type Preload struct {
+	Relation   string        `json:"relation"`             // e.g., "Stage", "Crop.Variety"
+	Conditions []interface{} `json:"conditions,omitempty"` // Optional preload conditions
+}
+
 // Filter represents the complete filter structure
 type Filter struct {
 	Group    FilterGroup `json:"group"`
@@ -76,6 +82,8 @@ type Filter struct {
 	PageSize int         `json:"page_size,omitempty"`
 	Limit    int         `json:"limit,omitempty"`
 	Offset   int         `json:"offset,omitempty"`
+	Preloads []Preload   `json:"preloads,omitempty"` // Eager load relationships
+	Selects  []string    `json:"selects,omitempty"`  // Select specific fields
 }
 
 // SortField represents a sorting field
@@ -194,6 +202,24 @@ func (fb *FilterBuilder) Page(page, pageSize int) *FilterBuilder {
 func (fb *FilterBuilder) Limit(limit, offset int) *FilterBuilder {
 	fb.filter.Limit = limit
 	fb.filter.Offset = offset
+	return fb
+}
+
+// Preload adds a relationship to preload
+func (fb *FilterBuilder) Preload(relation string, conditions ...interface{}) *FilterBuilder {
+	if fb.filter.Preloads == nil {
+		fb.filter.Preloads = []Preload{}
+	}
+	fb.filter.Preloads = append(fb.filter.Preloads, Preload{
+		Relation:   relation,
+		Conditions: conditions,
+	})
+	return fb
+}
+
+// Select adds fields to select
+func (fb *FilterBuilder) Select(fields ...string) *FilterBuilder {
+	fb.filter.Selects = append(fb.filter.Selects, fields...)
 	return fb
 }
 
