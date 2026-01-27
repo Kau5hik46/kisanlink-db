@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -566,6 +567,11 @@ func (pm *PostgresManager) List(ctx context.Context, filter *base.Filter, model 
 	// Set the model/table context for GORM
 	query := db.WithContext(ctx).Model(model)
 
+	// Auto soft-delete filter: exclude deleted records by default
+	if pm.hasSoftDeleteField(model) {
+		query = query.Where("deleted_at IS NULL")
+	}
+
 	// 1. Apply filter conditions FIRST (reduce rows)
 	if filter != nil {
 		pm.applyFilterGroup(query, &filter.Group)
@@ -732,6 +738,11 @@ func (pm *PostgresManager) Count(ctx context.Context, filter *base.Filter, model
 	// Set the model/table context for GORM
 	query := db.WithContext(ctx).Model(model)
 
+	// Auto soft-delete filter: exclude deleted records by default
+	if pm.hasSoftDeleteField(model) {
+		query = query.Where("deleted_at IS NULL")
+	}
+
 	// Apply filter conditions if provided
 	if filter != nil {
 		pm.applyFilterGroup(query, &filter.Group)
@@ -866,4 +877,44 @@ func (pm *PostgresManager) toSnakeCase(s string) string {
 		result.WriteRune(unicode.ToLower(r))
 	}
 	return result.String()
+}
+
+// hasSoftDeleteField checks if the model (or its slice element type) has a DeletedAt field,
+// indicating it supports soft-delete filtering.
+func (pm *PostgresManager) hasSoftDeleteField(model interface{}) bool {
+	t := reflect.TypeOf(model)
+	// Dereference pointer(s)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	// If it's a slice, get the element type
+	if t.Kind() == reflect.Slice {
+		t = t.Elem()
+		for t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+	}
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	_, found := t.FieldByName("DeletedAt")
+	if found {
+		return true
+	}
+	// Also check embedded structs (e.g., Model embedded in BaseModel)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Anonymous {
+			ft := field.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				if _, ok := ft.FieldByName("DeletedAt"); ok {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
